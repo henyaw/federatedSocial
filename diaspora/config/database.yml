@@ -1,0 +1,30 @@
+# Diaspora database config. Rails always evaluates database.yml as ERB,
+# so we read connection details from env vars set by docker-compose.yml.
+#
+# Mounted read-only at /home/diaspora/diaspora/config/database.yml.
+
+postgresql: &postgresql
+  adapter: postgresql
+  host: <%= ENV['DIASPORA_DB_HOST'] %>
+  port: <%= ENV['DIASPORA_DB_PORT'] || 5432 %>
+  username: <%= ENV['DIASPORA_DB_USER'] %>
+  password: <%= ENV['DIASPORA_DB_PASSWORD'] %>
+  encoding: unicode
+
+common: &common
+  <<: *postgresql
+
+combined: &combined
+  <<: *common
+
+development:
+  <<: *combined
+  database: <%= ENV['DIASPORA_DB_NAME'] || 'diaspora_development' %>
+
+production:
+  <<: *combined
+  database: <%= ENV['DIASPORA_DB_NAME'] || 'diaspora_production' %>
+
+test:
+  <<: *combined
+  database: diaspora_test

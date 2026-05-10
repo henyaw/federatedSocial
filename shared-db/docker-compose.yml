@@ -1,0 +1,129 @@
+# Shared Postgres + Redis for every app stack in this repo.
+#
+# Each data container shares a Tailscale sidecar's network namespace via
+# network_mode: "service:ts-<role>", so its only network interfaces are
+# `lo` and `tailscale0`. There are no `ports:` directives anywhere — the
+# data services are reachable from the tailnet only, gated by ACL tags.
+#
+# Bring this up FIRST. Wait for both sidecars to appear in your Tailscale
+# admin console before starting any app stack.
+
+name: federated-shared-db
+
+services:
+
+  # ---------------------------------------------------------------------
+  # Postgres
+  # ---------------------------------------------------------------------
+
+  ts-postgres:
+    image: tailscale/tailscale:latest
+    hostname: ${DB_MAGIC_NAME}
+    environment:
+      TS_AUTHKEY: ${TS_OAUTH_CLIENT_SECRET}?ephemeral=true
+      TS_EXTRA_ARGS: --advertise-tags=tag:db-postgres
+      TS_HOSTNAME: ${DB_MAGIC_NAME}
+      TS_ACCEPT_DNS: "true"
+      TS_AUTH_ONCE: "true"
+      TS_USERSPACE: "false"
+      TS_ENABLE_HEALTH_CHECK: "true"
+      # 127.0.0.1 ONLY — this endpoint must not be reachable across the
+      # tailnet. Compose uses it to wait for tailnet authentication.
+      TS_LOCAL_ADDR_PORT: "127.0.0.1:9002"
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9002/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    network_mode: "service:ts-postgres"
+    # Postgres listens on all interfaces inside this netns. The netns has
+    # only `lo` and `tailscale0` — there is no host or bridge interface to
+    # leak onto. Access is gated by Tailscale ACLs (see acl.example.hujson).
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: postgres
+      # Surfaced to the init script so it can mint per-app users/dbs.
+      PIXELFED_DB_NAME: ${PIXELFED_DB_NAME}
+      PIXELFED_DB_USER: ${PIXELFED_DB_USER}
+      PIXELFED_DB_PASSWORD: ${PIXELFED_DB_PASSWORD}
+      MASTODON_DB_NAME: ${MASTODON_DB_NAME}
+      MASTODON_DB_USER: ${MASTODON_DB_USER}
+      MASTODON_DB_PASSWORD: ${MASTODON_DB_PASSWORD}
+      DIASPORA_DB_NAME: ${DIASPORA_DB_NAME}
+      DIASPORA_DB_USER: ${DIASPORA_DB_USER}
+      DIASPORA_DB_PASSWORD: ${DIASPORA_DB_PASSWORD}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    depends_on:
+      ts-postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------
+  # Redis
+  # ---------------------------------------------------------------------
+
+  ts-redis:
+    image: tailscale/tailscale:latest
+    hostname: ${REDIS_MAGIC_NAME}
+    environment:
+      TS_AUTHKEY: ${TS_OAUTH_CLIENT_SECRET}?ephemeral=true
+      TS_EXTRA_ARGS: --advertise-tags=tag:db-redis
+      TS_HOSTNAME: ${REDIS_MAGIC_NAME}
+      TS_ACCEPT_DNS: "true"
+      TS_AUTH_ONCE: "true"
+      TS_USERSPACE: "false"
+      TS_ENABLE_HEALTH_CHECK: "true"
+      TS_LOCAL_ADDR_PORT: "127.0.0.1:9002"
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9002/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    network_mode: "service:ts-redis"
+    # `--protected-mode no` is required because Redis sees itself bound to
+    # 0.0.0.0 (the only interfaces in this netns are lo and tailscale0).
+    # Tailscale ACLs are the gate. No password — see .env.example.
+    command: ["redis-server", "--appendonly", "yes", "--protected-mode", "no"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    depends_on:
+      ts-redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pg-data:
+  redis-data:

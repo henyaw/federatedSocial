@@ -1,0 +1,19 @@
+# Operator's real configuration — never commit
+.env
+
+# Per-subdir .env symlinks (operator creates these to point at root .env)
+shared-db/.env
+pixelfed/.env
+mastodon/.env
+diaspora/.env
+funkwhale/.env
+bluesky/.env
+
+# Editor backups
+*.swp
+*.swo
+*~
+
+# OS noise
+.DS_Store
+Thumbs.db
