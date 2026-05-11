@@ -1,0 +1,74 @@
+# Diaspora — single embedded container behind one Tailscale sidecar.
+#
+# Sidekiq runs inside the unicorn process via SERVER_EMBED_SIDEKIQ_WORKER=true
+# (see config/diaspora.yml). For small-to-medium pods this is fine; if you
+# outgrow it, split sidekiq into its own service + sidecar (tag:diaspora-
+# sidekiq) and flip embed_sidekiq_worker to false.
+#
+# Bring up shared-db/ first.
+
+name: federated-diaspora
+
+services:
+
+  ts-diaspora-web:
+    image: tailscale/tailscale:latest
+    hostname: ${DIASPORA_WEB_MAGIC_NAME}
+    environment:
+      TS_AUTHKEY: ${TS_OAUTH_CLIENT_SECRET}?ephemeral=true
+      TS_EXTRA_ARGS: --advertise-tags=tag:diaspora-web
+      TS_HOSTNAME: ${DIASPORA_WEB_MAGIC_NAME}
+      TS_ACCEPT_DNS: "true"
+      TS_AUTH_ONCE: "true"
+      TS_USERSPACE: "false"
+      TS_ENABLE_HEALTH_CHECK: "true"
+      TS_LOCAL_ADDR_PORT: "127.0.0.1:9002"
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9002/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    restart: unless-stopped
+
+  diaspora:
+    image: koehn/diaspora:latest
+    network_mode: "service:ts-diaspora-web"
+    environment:
+      # Diaspora's settings reader maps these onto the YAML config tree
+      # via the documented dotted-path → upper-snake-case rule.
+      ENVIRONMENT_URL: ${DIASPORA_URL}
+      ENVIRONMENT_REDIS: redis://${REDIS_MAGIC_NAME}.${TS_TAILNET}:6379
+
+      # Postgres connection (read by config/database.yml's ERB).
+      DIASPORA_DB_HOST: ${DB_MAGIC_NAME}.${TS_TAILNET}
+      DIASPORA_DB_PORT: "5432"
+      DIASPORA_DB_NAME: ${DIASPORA_DB_NAME}
+      DIASPORA_DB_USER: ${DIASPORA_DB_USER}
+      DIASPORA_DB_PASSWORD: ${DIASPORA_DB_PASSWORD}
+
+      RAILS_ENV: production
+    volumes:
+      - ./config/diaspora.yml:/home/diaspora/diaspora/config/diaspora.yml:ro
+      - ./config/database.yml:/home/diaspora/diaspora/config/database.yml:ro
+      - diaspora-uploads:/home/diaspora/diaspora/public/uploads
+    healthcheck:
+      # Diaspora returns 200 on / once the app server is up. Generous
+      # start_period — first boot includes asset precompile + migrations.
+      test: ["CMD-SHELL", "curl -f -s -o /dev/null http://localhost:3000/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 300s
+    depends_on:
+      ts-diaspora-web:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  diaspora-uploads:
