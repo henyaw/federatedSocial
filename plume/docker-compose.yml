@@ -1,0 +1,94 @@
+# Plume — single container behind one Tailscale sidecar.
+#
+# Plume's worker is built into the main binary (Rocket async runtime), so
+# there is no separate sidekiq/horizon process to schedule. Sidecar gets
+# tag:plume-web; everything else routes through the host nginx via MagicDNS.
+#
+# Bring up shared-db/ first.
+#
+# Note: Plume is in maintenance limbo upstream — image is published and
+# federation works, but releases have been sparse. No open CVEs as of
+# adoption. If you outgrow this, the data is portable: it's just a Postgres
+# database, a media directory, and a Tantivy index volume.
+#
+# First-boot operator steps (run once after `docker compose up -d`):
+#
+#   docker compose run --rm plume plm instance new \
+#       -d "${PLUME_DOMAIN}" -n "My Blog" -l "CC-BY-SA-4.0"
+#   docker compose run --rm plume plm users new \
+#       -n admin -N "Admin" -b "Admin user" \
+#       -e "admin@${PLUME_DOMAIN}" -p "$(openssl rand -base64 24)" --admin
+#
+# Migration and search-index init run automatically on every service start
+# via entrypoint-wrapper.sh; both are idempotent.
+
+name: federated-plume
+
+services:
+
+  ts-plume-web:
+    image: tailscale/tailscale:latest
+    hostname: ${PLUME_WEB_MAGIC_NAME}
+    environment:
+      TS_AUTHKEY: ${TS_OAUTH_CLIENT_SECRET}?ephemeral=true
+      TS_EXTRA_ARGS: --advertise-tags=tag:plume-web
+      TS_HOSTNAME: ${PLUME_WEB_MAGIC_NAME}
+      TS_ACCEPT_DNS: "true"
+      TS_AUTH_ONCE: "true"
+      TS_USERSPACE: "false"
+      TS_ENABLE_HEALTH_CHECK: "true"
+      TS_LOCAL_ADDR_PORT: "127.0.0.1:9002"
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9002/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    restart: unless-stopped
+
+  plume:
+    image: plumeorg/plume:latest
+    network_mode: "service:ts-plume-web"
+    entrypoint: ["/usr/local/bin/ts-entrypoint.sh"]
+    command: ["plume"]
+    environment:
+      BASE_URL: ${PLUME_DOMAIN}
+      ROCKET_SECRET_KEY: ${PLUME_ROCKET_SECRET_KEY}
+      # 0.0.0.0 inside this netns means lo+tailscale0 only. Host nginx is
+      # the only entry point; Tailscale ACL gates everything else.
+      ROCKET_ADDRESS: "0.0.0.0"
+      ROCKET_PORT: "7878"
+      USE_HTTPS: "1"
+      RUST_LOG: info
+      MIGRATION_DIRECTORY: migrations/postgres
+      DATABASE_URL: postgres://${PLUME_DB_USER}:${PLUME_DB_PASSWORD}@${DB_MAGIC_NAME}.${TS_TAILNET}:5432/${PLUME_DB_NAME}
+      # Optional mail config — leave blank to disable outgoing email.
+      MAIL_SERVER: ${PLUME_MAIL_SERVER:-}
+      MAIL_USER: ${PLUME_MAIL_USER:-}
+      MAIL_PASSWORD: ${PLUME_MAIL_PASSWORD:-}
+      MAIL_HELO_NAME: ${PLUME_MAIL_HELO_NAME:-}
+    volumes:
+      - ./entrypoint-wrapper.sh:/usr/local/bin/ts-entrypoint.sh:ro
+      - plume-media:/app/static/media
+      - plume-search:/app/search_index
+    healthcheck:
+      # Plume returns 200 on / once the web server is up. Generous
+      # start_period because first boot also runs migrations.
+      test: ["CMD-SHELL", "wget -qO- --tries=1 http://localhost:7878/ >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    depends_on:
+      ts-plume-web:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  plume-media:
+  plume-search:

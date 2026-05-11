@@ -26,6 +26,9 @@
     // Diaspora (single embedded container — sidekiq runs in-process)
     "tag:diaspora-web":         ["autogroup:admin"],
 
+    // Plume (single container — worker is in-process)
+    "tag:plume-web":            ["autogroup:admin"],
+
     // Future stacks — uncomment when you bring them up
     // "tag:funkwhale-web":     ["autogroup:admin"],
     // "tag:funkwhale-worker":  ["autogroup:admin"],
@@ -41,6 +44,7 @@
         "tag:pixelfed-web", "tag:pixelfed-worker",
         "tag:mastodon-web", "tag:mastodon-streaming", "tag:mastodon-sidekiq",
         "tag:diaspora-web",
+        "tag:plume-web",
         // "tag:funkwhale-web", "tag:funkwhale-worker",
         // "tag:bluesky-pds",
       ],
@@ -66,7 +70,8 @@
   //     "dst":    ["tag:db-postgres", "tag:db-redis",
   //                "tag:pixelfed-web", "tag:pixelfed-worker",
   //                "tag:mastodon-web", "tag:mastodon-streaming", "tag:mastodon-sidekiq",
-  //                "tag:diaspora-web"],
+  //                "tag:diaspora-web",
+  //                "tag:plume-web"],
   //     "users":  ["root", "autogroup:nonroot"],
   //   },
   // ],
