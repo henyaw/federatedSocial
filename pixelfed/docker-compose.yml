@@ -1,0 +1,184 @@
+# Pixelfed — three containers behind two Tailscale sidecars.
+#
+#   ts-pixelfed-web      → web (nginx+php-fpm), public-facing via host nginx
+#   ts-pixelfed-worker   → worker (Horizon) + cron (schedule:work), internal-only
+#
+# Worker and cron share the worker sidecar's network namespace because both
+# are internal-only (only need to reach Postgres+Redis) and benefit from
+# being one tailnet device with one ACL tag.
+#
+# Bring up shared-db/ first and wait for both DB sidecars to be healthy
+# in your Tailscale admin console before `docker compose up -d` here.
+
+name: federated-pixelfed
+
+services:
+
+  # ---------------------------------------------------------------------
+  # Web — public-facing
+  # ---------------------------------------------------------------------
+
+  ts-pixelfed-web:
+    image: tailscale/tailscale:latest
+    hostname: ${PIXELFED_WEB_MAGIC_NAME}
+    environment:
+      TS_AUTHKEY: ${TS_OAUTH_CLIENT_SECRET}?ephemeral=true
+      TS_EXTRA_ARGS: --advertise-tags=tag:pixelfed-web
+      TS_HOSTNAME: ${PIXELFED_WEB_MAGIC_NAME}
+      TS_ACCEPT_DNS: "true"
+      TS_AUTH_ONCE: "true"
+      TS_USERSPACE: "false"
+      TS_ENABLE_HEALTH_CHECK: "true"
+      TS_LOCAL_ADDR_PORT: "127.0.0.1:9002"
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9002/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    restart: unless-stopped
+
+  web:
+    image: ghcr.io/pixelfed-glitch/pixelfed:nginx-latest
+    network_mode: "service:ts-pixelfed-web"
+    entrypoint: ["/usr/local/bin/ts-entrypoint.sh"]
+    command: ["forego", "start", "-r"]
+    environment:
+      TZ: "UTC"
+      DOCKER_SERVICE_NAME: "web"
+      APP_DOMAIN: ${PIXELFED_DOMAIN}
+      APP_KEY: ${PIXELFED_APP_KEY}
+      DB_HOST: ${DB_MAGIC_NAME}.${TS_TAILNET}
+      DB_PORT: "5432"
+      DB_DATABASE: ${PIXELFED_DB_NAME}
+      DB_USERNAME: ${PIXELFED_DB_USER}
+      DB_PASSWORD: ${PIXELFED_DB_PASSWORD}
+      REDIS_HOST: ${REDIS_MAGIC_NAME}.${TS_TAILNET}
+      REDIS_PORT: "6379"
+      ENFORCE_EMAIL_VERIFICATION: ${PIXELFED_ENFORCE_EMAIL_VERIFICATION:-false}
+    volumes:
+      - ./entrypoint-wrapper.sh:/usr/local/bin/ts-entrypoint.sh:ro
+      - pixelfed-storage:/var/www/storage
+      - pixelfed-cache:/var/www/bootstrap/cache
+    healthcheck:
+      test: ["CMD-SHELL", "curl --header 'Host: ${PIXELFED_DOMAIN}' --fail http://localhost/api/service/health-check || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    depends_on:
+      ts-pixelfed-web:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------
+  # Worker (Horizon) + cron — internal only, share one sidecar
+  # ---------------------------------------------------------------------
+
+  ts-pixelfed-worker:
+    image: tailscale/tailscale:latest
+    hostname: ${PIXELFED_WORKER_MAGIC_NAME}
+    environment:
+      TS_AUTHKEY: ${TS_OAUTH_CLIENT_SECRET}?ephemeral=true
+      TS_EXTRA_ARGS: --advertise-tags=tag:pixelfed-worker
+      TS_HOSTNAME: ${PIXELFED_WORKER_MAGIC_NAME}
+      TS_ACCEPT_DNS: "true"
+      TS_AUTH_ONCE: "true"
+      TS_USERSPACE: "false"
+      TS_ENABLE_HEALTH_CHECK: "true"
+      TS_LOCAL_ADDR_PORT: "127.0.0.1:9002"
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9002/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    restart: unless-stopped
+
+  worker:
+    image: ghcr.io/pixelfed-glitch/pixelfed:fpm-latest
+    network_mode: "service:ts-pixelfed-worker"
+    entrypoint: ["/usr/local/bin/ts-entrypoint.sh"]
+    command: ["gosu", "www-data", "php", "artisan", "horizon"]
+    stop_signal: SIGTERM
+    environment:
+      TZ: "UTC"
+      DOCKER_SERVICE_NAME: "worker"
+      ENTRYPOINT_SKIP_SCRIPTS: "any"
+      APP_DOMAIN: ${PIXELFED_DOMAIN}
+      APP_KEY: ${PIXELFED_APP_KEY}
+      DB_HOST: ${DB_MAGIC_NAME}.${TS_TAILNET}
+      DB_PORT: "5432"
+      DB_DATABASE: ${PIXELFED_DB_NAME}
+      DB_USERNAME: ${PIXELFED_DB_USER}
+      DB_PASSWORD: ${PIXELFED_DB_PASSWORD}
+      REDIS_HOST: ${REDIS_MAGIC_NAME}.${TS_TAILNET}
+      REDIS_PORT: "6379"
+      ENFORCE_EMAIL_VERIFICATION: ${PIXELFED_ENFORCE_EMAIL_VERIFICATION:-false}
+    volumes:
+      - ./entrypoint-wrapper.sh:/usr/local/bin/ts-entrypoint.sh:ro
+      - pixelfed-storage:/var/www/storage
+      - pixelfed-cache:/var/www/bootstrap/cache
+    healthcheck:
+      test: ["CMD-SHELL", "gosu www-data php artisan horizon:status | grep -q running"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    depends_on:
+      ts-pixelfed-worker:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+
+  cron:
+    image: ghcr.io/pixelfed-glitch/pixelfed:fpm-latest
+    network_mode: "service:ts-pixelfed-worker"
+    entrypoint: ["/usr/local/bin/ts-entrypoint.sh"]
+    command: ["gosu", "www-data", "php", "artisan", "schedule:work"]
+    stop_signal: SIGTERM
+    environment:
+      TZ: "UTC"
+      DOCKER_SERVICE_NAME: "cron"
+      ENTRYPOINT_SKIP_SCRIPTS: "any"
+      APP_DOMAIN: ${PIXELFED_DOMAIN}
+      APP_KEY: ${PIXELFED_APP_KEY}
+      DB_HOST: ${DB_MAGIC_NAME}.${TS_TAILNET}
+      DB_PORT: "5432"
+      DB_DATABASE: ${PIXELFED_DB_NAME}
+      DB_USERNAME: ${PIXELFED_DB_USER}
+      DB_PASSWORD: ${PIXELFED_DB_PASSWORD}
+      REDIS_HOST: ${REDIS_MAGIC_NAME}.${TS_TAILNET}
+      REDIS_PORT: "6379"
+      ENFORCE_EMAIL_VERIFICATION: ${PIXELFED_ENFORCE_EMAIL_VERIFICATION:-false}
+    volumes:
+      - ./entrypoint-wrapper.sh:/usr/local/bin/ts-entrypoint.sh:ro
+      - pixelfed-storage:/var/www/storage
+      - pixelfed-cache:/var/www/bootstrap/cache
+    healthcheck:
+      test: ["CMD-SHELL", "ps aux | grep -q '[s]chedule:work'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      ts-pixelfed-worker:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pixelfed-storage:
+  pixelfed-cache:
