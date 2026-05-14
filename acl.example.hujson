@@ -20,15 +20,25 @@
 //     "tag:db-redis": ["autogroup:admin", "tag:db-redis"]
 //
 // This is NOT redundant. Tailscale's control plane rejects tag application
-// from OAuth clients and auth keys when the only owner is "autogroup:admin",
-// even when the human who created the credential IS an admin. The
-// workaround — adding the tag itself to its own owner list — is the
-// documented pattern for OAuth/auth-key-based node creation. Failing to
-// include it produces this error at sidecar boot:
+// from auth keys when the only owner is "autogroup:admin", even when the
+// human who created the credential IS an admin. The workaround — adding the
+// tag itself to its own owner list — is the documented pattern for
+// auth-key-based node creation. Failing to include it produces this error
+// at sidecar boot:
 //
 //     Received error: requested tags [tag:db-redis] are invalid or not permitted
 //
 // See https://github.com/tailscale/tailscale/issues/12402 for context.
+//
+// Note for the OAuth-client path: this self-ownership pattern alone is NOT
+// sufficient for OAuth clients. The OAuth client *also* needs the right
+// scopes — Devices+Core, Keys+AuthKeys, AND Keys+OAuthKeys (R+W on each),
+// with the full tag list assigned. See the Tailscale section in
+// .env.example for the exact configuration. Missing the AuthKeys or
+// OAuthKeys scopes produces a different but equally confusing 403:
+//
+//     Status: 403, Message: "calling actor does not have enough permissions
+//     to perform this function"
 
 {
   "tagOwners": {
