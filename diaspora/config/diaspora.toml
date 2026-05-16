@@ -37,7 +37,12 @@ concurrency = 5
 ## Bind on all interfaces inside the sidecar netns. The netns has only
 ## `lo` and `tailscale0`; reachability is gated by the host reverse
 ## proxy via MagicDNS + the tag:reverse-proxy ACL grant.
-listen = "0.0.0.0:3000"
+##
+## Note: the "tcp://" scheme is required for Puma 7.x. The koehn image
+## ships Puma 7, even though Diaspora's upstream diaspora.toml.example
+## still shows the bare "0.0.0.0:3000" form (which Puma 6 accepted but
+## Puma 7 rejects with a URI::InvalidURIError).
+listen = "tcp://0.0.0.0:3000"
 
 rails_environment = "production"
 
