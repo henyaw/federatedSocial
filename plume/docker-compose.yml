@@ -31,7 +31,6 @@ services:
     hostname: ${PLUME_WEB_MAGIC_NAME}
     environment:
       TS_AUTHKEY: ${TS_AUTHKEY:-${TS_OAUTH_CLIENT_SECRET}?ephemeral=true}
-      TS_AUTHKEY: ${TS_OAUTH_CLIENT_SECRET}?ephemeral=true
       TS_EXTRA_ARGS: --advertise-tags=tag:plume-web
       TS_HOSTNAME: ${PLUME_WEB_MAGIC_NAME}
       TS_ACCEPT_DNS: "true"
