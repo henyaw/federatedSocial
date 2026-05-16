@@ -61,6 +61,7 @@ services:
     hostname: ${MASTODON_WEB_MAGIC_NAME}
     environment:
       TS_AUTHKEY: ${TS_AUTHKEY:-${TS_OAUTH_CLIENT_SECRET}?ephemeral=true}
+      TS_AUTHKEY: ${TS_OAUTH_CLIENT_SECRET}?ephemeral=true
       TS_EXTRA_ARGS: --advertise-tags=tag:mastodon-web
       TS_HOSTNAME: ${MASTODON_WEB_MAGIC_NAME}
       TS_ACCEPT_DNS: "true"
@@ -117,6 +118,7 @@ services:
     hostname: ${MASTODON_STREAMING_MAGIC_NAME}
     environment:
       TS_AUTHKEY: ${TS_AUTHKEY:-${TS_OAUTH_CLIENT_SECRET}?ephemeral=true}
+      TS_AUTHKEY: ${TS_OAUTH_CLIENT_SECRET}?ephemeral=true
       TS_EXTRA_ARGS: --advertise-tags=tag:mastodon-streaming
       TS_HOSTNAME: ${MASTODON_STREAMING_MAGIC_NAME}
       TS_ACCEPT_DNS: "true"
@@ -164,6 +166,7 @@ services:
     hostname: ${MASTODON_SIDEKIQ_MAGIC_NAME}
     environment:
       TS_AUTHKEY: ${TS_AUTHKEY:-${TS_OAUTH_CLIENT_SECRET}?ephemeral=true}
+      TS_AUTHKEY: ${TS_OAUTH_CLIENT_SECRET}?ephemeral=true
       TS_EXTRA_ARGS: --advertise-tags=tag:mastodon-sidekiq
       TS_HOSTNAME: ${MASTODON_SIDEKIQ_MAGIC_NAME}
       TS_ACCEPT_DNS: "true"

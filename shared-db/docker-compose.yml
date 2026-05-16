@@ -21,6 +21,7 @@ services:
     hostname: ${DB_MAGIC_NAME}
     environment:
       TS_AUTHKEY: ${TS_AUTHKEY:-${TS_OAUTH_CLIENT_SECRET}?ephemeral=true}
+      TS_AUTHKEY: ${TS_OAUTH_CLIENT_SECRET}?ephemeral=true
       TS_EXTRA_ARGS: --advertise-tags=tag:db-postgres
       TS_HOSTNAME: ${DB_MAGIC_NAME}
       TS_ACCEPT_DNS: "true"
@@ -88,6 +89,7 @@ services:
     hostname: ${REDIS_MAGIC_NAME}
     environment:
       TS_AUTHKEY: ${TS_AUTHKEY:-${TS_OAUTH_CLIENT_SECRET}?ephemeral=true}
+      TS_AUTHKEY: ${TS_OAUTH_CLIENT_SECRET}?ephemeral=true
       TS_EXTRA_ARGS: --advertise-tags=tag:db-redis
       TS_HOSTNAME: ${REDIS_MAGIC_NAME}
       TS_ACCEPT_DNS: "true"
