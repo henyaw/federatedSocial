@@ -1,0 +1,73 @@
+# federated-social — host reverse proxy (Caddy)
+# ----------------------------------------------------------------------------
+# Caddy is the simplest path to public TLS on this stack — it auto-acquires
+# Let's Encrypt certificates for every domain on first request and renews
+# them on a timer. No certbot, no separate cron job.
+#
+# Quick path:
+#   1. cp caddy/Caddyfile /etc/caddy/Caddyfile
+#   2. Replace pixelfed.example.com / mastodon.example.com / etc. with your
+#      real public domains (match your .env *_DOMAIN values).
+#   3. Replace tailfe8c.ts.net with your TS_TAILNET value from .env.
+#   4. Optional but recommended: replace admin@example.com with a real
+#      address (Let's Encrypt sends expiry warnings there).
+#   5. sudo systemctl reload caddy
+#
+# Prerequisites:
+#   - A or AAAA records for each public domain pointing to this host.
+#   - Inbound TCP/80 and TCP/443 open in your firewall.
+#   - Host machine tagged tag:reverse-proxy in the Tailscale admin console
+#     (Machines -> this host -> Edit tags). Required so the ACL grants in
+#     acl.example.hujson allow it to reach the app web tiers over the
+#     tailnet. Without this tag, you'll see 200s from nothing — the proxy
+#     can't even open a TCP connection to the upstreams.
+#
+# WebSockets, Host header forwarding, HTTP/2, automatic redirect from :80
+# to :443, X-Forwarded-* headers — Caddy's `reverse_proxy` directive
+# handles all of these by default. Nothing to configure.
+
+{
+  email admin@example.com
+}
+
+# ---------------------------------------------------------------------------
+# Pixelfed
+# ---------------------------------------------------------------------------
+# Pixelfed's container nginx listens on port 80 inside its sidecar netns,
+# reachable via MagicDNS over the tailnet.
+pixelfed.example.com {
+  reverse_proxy pixelfed.tailfe8c.ts.net:80
+}
+
+# ---------------------------------------------------------------------------
+# Mastodon — Rails web + Node streaming behind one public hostname
+# ---------------------------------------------------------------------------
+# /api/v1/streaming/* goes to the Node streaming server on :4000 (WebSocket
+# upgrade is automatic in Caddy). Everything else goes to Puma on :3000.
+mastodon.example.com {
+  @streaming path /api/v1/streaming /api/v1/streaming/*
+  handle @streaming {
+    reverse_proxy mastodon-streaming.tailfe8c.ts.net:4000
+  }
+  handle {
+    reverse_proxy mastodon.tailfe8c.ts.net:3000
+  }
+}
+
+# ---------------------------------------------------------------------------
+# Diaspora
+# ---------------------------------------------------------------------------
+# Rails listens on :3000 inside the diaspora sidecar. The koehn image also
+# runs lighttpd on :8080 for precompiled assets, but :3000 serves both fine
+# for small/medium pods.
+diaspora.example.com {
+  reverse_proxy diaspora.tailfe8c.ts.net:3000
+}
+
+# ---------------------------------------------------------------------------
+# Plume
+# ---------------------------------------------------------------------------
+# Rocket (Rust) on :7878 serves the whole app — federation, web UI, assets.
+plume.example.com {
+  reverse_proxy plume.tailfe8c.ts.net:7878
+}
