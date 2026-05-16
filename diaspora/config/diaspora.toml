@@ -63,9 +63,5 @@ count = 25
 [configuration.settings.captcha]
 enable = true
 
-## Mail and admin sections are intentionally omitted — configure later
+## Mail and admin sections are intentionally omitted -- configure later
 ## via MAIL_* and ADMINS_* env vars when you set up SMTP.
-
-[production.environment]
-## Overridable production-specific bits (currently none — everything
-## above already targets production via env vars).
