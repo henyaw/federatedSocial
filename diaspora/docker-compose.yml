@@ -54,7 +54,7 @@ services:
 
       RAILS_ENV: production
     volumes:
-      - ./config/diaspora.yml:/home/diaspora/diaspora/config/diaspora.yml:ro
+      - ./config/diaspora.toml:/home/diaspora/diaspora/config/diaspora.toml:ro
       - ./config/database.yml:/home/diaspora/diaspora/config/database.yml:ro
       - diaspora-uploads:/home/diaspora/diaspora/public/uploads
     healthcheck:

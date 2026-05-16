@@ -1,0 +1,71 @@
+## Diaspora pod config (TOML form).
+##
+## Diaspora 1.0 drops support for the old YAML config; this file is the
+## supported format going forward. Static defaults live here; anything
+## dynamic (URL, Redis, registrations) is overridden at runtime via env
+## vars set in docker-compose.yml. The override convention is documented
+## in upstream's diaspora.toml.example:
+##
+##   environment.url           -> ENVIRONMENT_URL
+##   environment.redis         -> ENVIRONMENT_REDIS
+##   server.embed_sidekiq...   -> SERVER_EMBED_SIDEKIQ_WORKER
+##   settings.pod_name         -> SETTINGS_POD_NAME
+##
+## Mounted read-only at /home/diaspora/diaspora/config/diaspora.toml.
+
+[configuration.environment]
+
+## URL is set via ENVIRONMENT_URL in docker-compose.yml.
+## (This placeholder is overridden at runtime; do not change it here.)
+url = "https://example.org/"
+
+## Path to the system CA bundle inside the container (Debian).
+certificate_authorities = "/etc/ssl/certs/ca-certificates.crt"
+
+## Redis is set via ENVIRONMENT_REDIS in docker-compose.yml.
+
+## Force HTTPS in production. The host reverse proxy terminates TLS.
+require_ssl = true
+
+[configuration.environment.sidekiq]
+
+## Match database pool size in database.yml if you raise this.
+concurrency = 5
+
+[configuration.server]
+
+## Bind on all interfaces inside the sidecar netns. The netns has only
+## `lo` and `tailscale0`; reachability is gated by the host reverse
+## proxy via MagicDNS + the tag:reverse-proxy ACL grant.
+listen = "0.0.0.0:3000"
+
+rails_environment = "production"
+
+## Run sidekiq inside the unicorn process. Set to false and add a
+## separate sidekiq container if you outgrow embedded mode.
+embed_sidekiq_worker = true
+
+[configuration.settings]
+
+## Display name for your pod. Override at runtime via SETTINGS_POD_NAME.
+pod_name = "diaspora*"
+
+## Allow new signups. Override via SETTINGS_ENABLE_REGISTRATIONS.
+enable_registrations = true
+
+[configuration.settings.welcome_message]
+enabled = false
+
+[configuration.settings.invitations]
+open = true
+count = 25
+
+[configuration.settings.captcha]
+enable = true
+
+## Mail and admin sections are intentionally omitted — configure later
+## via MAIL_* and ADMINS_* env vars when you set up SMTP.
+
+[production.environment]
+## Overridable production-specific bits (currently none — everything
+## above already targets production via env vars).
