@@ -1,3 +1,82 @@
+// federated-social Tailscale policy file
+// ----------------------------------------------------------------------------
+// Paste this into the Tailscale admin console under Access Controls.
+//
+// WARNING: pasting this REPLACES your existing policy in full. If you have
+// an existing tailnet with custom rules, merge the relevant blocks below
+// into your current policy rather than overwriting it. (Tailscale keeps
+// version history if you do clobber it; revert via the version log.)
+//
+// This template uses the modern "grants" syntax. Legacy "acls" arrays are
+// still supported by Tailscale indefinitely, but grants is the recommended
+// shape for new policies. See:
+// https://tailscale.com/docs/reference/grants-vs-acls
+//
+// ---------------------------------------------------------------------------
+// The tag-owns-itself gotcha
+// ---------------------------------------------------------------------------
+// You will see each app tag listed as its own tagOwner, e.g.:
+//
+//     "tag:db-redis": ["autogroup:admin", "tag:db-redis"]
+//
+// This is NOT redundant. Tailscale's control plane rejects tag application
+// from auth keys when the only owner is "autogroup:admin", even when the
+// human who created the credential IS an admin. The workaround — adding the
+// tag itself to its own owner list — is the documented pattern for
+// auth-key-based node creation. Failing to include it produces this error
+// at sidecar boot:
+//
+//     Received error: requested tags [tag:db-redis] are invalid or not permitted
+//
+// See https://github.com/tailscale/tailscale/issues/12402 for context.
+//
+// Note for the OAuth-client path: this self-ownership pattern alone is NOT
+// sufficient for OAuth clients. The OAuth client *also* needs the right
+// scopes — Devices+Core, Keys+AuthKeys, AND Keys+OAuthKeys (R+W on each),
+// with the full tag list assigned. See the Tailscale section in
+// .env.example for the exact configuration. Missing the AuthKeys or
+// OAuthKeys scopes produces a different but equally confusing 403:
+//
+//     Status: 403, Message: "calling actor does not have enough permissions
+//     to perform this function"
+
+{
+  "tagOwners": {
+    // Shared infrastructure
+    "tag:db-postgres":          ["autogroup:admin", "tag:db-postgres"],
+    "tag:db-redis":             ["autogroup:admin", "tag:db-redis"],
+
+    // Pixelfed
+    "tag:pixelfed-web":         ["autogroup:admin", "tag:pixelfed-web"],
+    "tag:pixelfed-worker":      ["autogroup:admin", "tag:pixelfed-worker"],
+
+    // Mastodon
+    "tag:mastodon-web":         ["autogroup:admin", "tag:mastodon-web"],
+    "tag:mastodon-streaming":   ["autogroup:admin", "tag:mastodon-streaming"],
+    "tag:mastodon-sidekiq":     ["autogroup:admin", "tag:mastodon-sidekiq"],
+
+    // Diaspora (single embedded container — sidekiq runs in-process)
+    "tag:diaspora-web":         ["autogroup:admin", "tag:diaspora-web"],
+
+    // Plume (single container — worker is in-process)
+    "tag:plume-web":            ["autogroup:admin", "tag:plume-web"],
+
+    // Host reverse proxy. Apply this tag to your Debian host machine in
+    // the admin console (Machines -> ... -> Edit tags) so the grants
+    // below let the host nginx reach the app web tiers over the tailnet.
+    "tag:reverse-proxy":        ["autogroup:admin", "tag:reverse-proxy"],
+
+    // Future stacks — uncomment when you bring them up. Remember to add
+    // the self-ownership entry in the same pattern.
+    // "tag:funkwhale-web":     ["autogroup:admin", "tag:funkwhale-web"],
+    // "tag:funkwhale-worker":  ["autogroup:admin", "tag:funkwhale-worker"],
+    // "tag:bluesky-pds":       ["autogroup:admin", "tag:bluesky-pds"],
+  },
+
+  "grants": [
+    // App tiers reach shared Postgres on TCP/5432 only.
+    // Add new app tags to this src list when you bring them up.
+    {
 // federated-social Tailscale ACL
 // ----------------------------------------------------------------------------
 // Paste this into the Tailscale admin console under Access Controls.
@@ -48,11 +127,56 @@
         // "tag:funkwhale-web", "tag:funkwhale-worker",
         // "tag:bluesky-pds",
       ],
+      "dst": ["tag:db-postgres"],
+      "ip":  ["tcp:5432"],
+    },
+
+    // App tiers reach shared Redis on TCP/6379 only.
+    {
+      "src": [
+        "tag:pixelfed-web", "tag:pixelfed-worker",
+        "tag:mastodon-web", "tag:mastodon-streaming", "tag:mastodon-sidekiq",
+        "tag:diaspora-web",
+        "tag:plume-web",
+        // "tag:funkwhale-web", "tag:funkwhale-worker",
+        // "tag:bluesky-pds",
+      ],
+      "dst": ["tag:db-redis"],
+      "ip":  ["tcp:6379"],
+    },
+
+    // Host reverse proxy reaches each public-facing app web tier on the
+    // tier's INTERNAL listen port (not 80/443 — that's the proxy's public
+    // side). Tag your host machine with tag:reverse-proxy for this to
+    // apply. Ports match what each container listens on inside its
+    // sidecar netns; see each app's docker-compose.yml.
+    {
+      "src": ["tag:reverse-proxy"],
+      "dst": ["tag:pixelfed-web"],
+      "ip":  ["tcp:80"],
+    },
+    {
+      "src": ["tag:reverse-proxy"],
+      "dst": ["tag:mastodon-web", "tag:diaspora-web"],
+      "ip":  ["tcp:3000"],
+    },
+    {
+      "src": ["tag:reverse-proxy"],
+      "dst": ["tag:mastodon-streaming"],
+      "ip":  ["tcp:4000"],
+    },
+    {
+      "src": ["tag:reverse-proxy"],
+      "dst": ["tag:plume-web"],
+      "ip":  ["tcp:7878"],
       "dst": ["tag:db-postgres:5432", "tag:db-redis:6379"],
     },
 
     // Admins (you, on your laptop) reach everything for debugging.
     {
+      "src": ["autogroup:admin"],
+      "dst": ["*"],
+      "ip":  ["*"],
       "action": "accept",
       "src": ["autogroup:admin"],
       "dst": ["*:*"],

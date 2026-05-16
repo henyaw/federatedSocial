@@ -22,6 +22,7 @@ services:
     image: tailscale/tailscale:latest
     hostname: ${PIXELFED_WEB_MAGIC_NAME}
     environment:
+      TS_AUTHKEY: ${TS_AUTHKEY:-${TS_OAUTH_CLIENT_SECRET}?ephemeral=true}
       TS_AUTHKEY: ${TS_OAUTH_CLIENT_SECRET}?ephemeral=true
       TS_EXTRA_ARGS: --advertise-tags=tag:pixelfed-web
       TS_HOSTNAME: ${PIXELFED_WEB_MAGIC_NAME}
@@ -84,6 +85,7 @@ services:
     image: tailscale/tailscale:latest
     hostname: ${PIXELFED_WORKER_MAGIC_NAME}
     environment:
+      TS_AUTHKEY: ${TS_AUTHKEY:-${TS_OAUTH_CLIENT_SECRET}?ephemeral=true}
       TS_AUTHKEY: ${TS_OAUTH_CLIENT_SECRET}?ephemeral=true
       TS_EXTRA_ARGS: --advertise-tags=tag:pixelfed-worker
       TS_HOSTNAME: ${PIXELFED_WORKER_MAGIC_NAME}
