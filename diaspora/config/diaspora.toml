@@ -32,6 +32,21 @@ require_ssl = true
 ## Match database pool size in database.yml if you raise this.
 concurrency = 5
 
+[configuration.environment.assets]
+
+## Serve static assets (CSS, JS, images) through the appserver (Rails)
+## itself rather than expecting the reverse proxy to serve them from
+## public/ directly. Diaspora's docs call this "highly discouraged for
+## production" because direct file serving is faster, but it requires
+## the reverse proxy to share a filesystem with the container -- which
+## breaks the sidecar pattern this repo is built on. Asset-serving
+## through Rails is the right tradeoff for a self-hosted hobby pod;
+## flip to false if you ever mount public/assets out to the host.
+##
+## Symptom if you leave this false: site loads but has no images and
+## the layout looks unstyled.
+serve = true
+
 [configuration.server]
 
 ## Bind on all interfaces inside the sidecar netns. The netns has only

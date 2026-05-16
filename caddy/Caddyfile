@@ -60,6 +60,13 @@ mastodon.example.com {
 # Rails listens on :3000 inside the diaspora sidecar. The koehn image also
 # runs lighttpd on :8080 for precompiled assets, but :3000 serves both fine
 # for small/medium pods.
+#
+# Diaspora normally expects the reverse proxy to serve /assets/* directly
+# from its public/ directory. We don't (host filesystem isn't shared with
+# the container's public/ dir under the sidecar pattern), so we set
+# environment.assets.serve = true in diaspora.toml to make Rails serve
+# its own assets. If that flag isn't set you'll see an unstyled site
+# with no images.
 diaspora.example.com {
   reverse_proxy diaspora.tailfe8c.ts.net:3000
 }
