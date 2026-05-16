@@ -33,6 +33,13 @@ x-mastodon-env: &mastodon-env
   REDIS_HOST: ${REDIS_MAGIC_NAME}.${TS_TAILNET}
   REDIS_PORT: "6379"
 
+  # Tailscale CGNAT range. Without this, Mastodon's RemoteIp middleware
+  # refuses to trust the reverse proxy's X-Forwarded-For header (because
+  # the proxy's tailnet IP isn't in the default RFC1918 trusted set) and
+  # every browser request 500s with:
+  #   ActionDispatch::RemoteIp::IpSpoofAttackError
+  TRUSTED_PROXY_IP: "100.64.0.0/10"
+
   SECRET_KEY_BASE: ${MASTODON_SECRET_KEY_BASE}
   OTP_SECRET: ${MASTODON_OTP_SECRET}
   VAPID_PRIVATE_KEY: ${MASTODON_VAPID_PRIVATE_KEY}
