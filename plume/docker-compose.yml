@@ -28,6 +28,7 @@ services:
 
   ts-plume-web:
     image: tailscale/tailscale:latest
+    dns: [1.1.1.1, 1.0.0.1]   # bootstrap DNS; Tailscale overrides via TS_ACCEPT_DNS
     hostname: ${PLUME_WEB_MAGIC_NAME}
     environment:
       TS_AUTHKEY: ${TS_AUTHKEY:-${TS_OAUTH_CLIENT_SECRET}?ephemeral=true}

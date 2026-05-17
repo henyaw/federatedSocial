@@ -20,6 +20,7 @@ services:
 
   ts-pixelfed-web:
     image: tailscale/tailscale:latest
+    dns: [1.1.1.1, 1.0.0.1]   # bootstrap DNS; Tailscale overrides via TS_ACCEPT_DNS
     hostname: ${PIXELFED_WEB_MAGIC_NAME}
     environment:
       TS_AUTHKEY: ${TS_AUTHKEY:-${TS_OAUTH_CLIENT_SECRET}?ephemeral=true}
@@ -82,6 +83,7 @@ services:
 
   ts-pixelfed-worker:
     image: tailscale/tailscale:latest
+    dns: [1.1.1.1, 1.0.0.1]   # bootstrap DNS; Tailscale overrides via TS_ACCEPT_DNS
     hostname: ${PIXELFED_WORKER_MAGIC_NAME}
     environment:
       TS_AUTHKEY: ${TS_AUTHKEY:-${TS_OAUTH_CLIENT_SECRET}?ephemeral=true}
