@@ -63,6 +63,9 @@ services:
       DIASPORA_DB_PASSWORD: ${DIASPORA_DB_PASSWORD}
 
       RAILS_ENV: production
+      # Without a UTF-8 locale Ruby defaults to US-ASCII and citrus fails to
+      # parse diaspora.toml if it contains any non-ASCII bytes.
+      LANG: C.UTF-8
     volumes:
       - ./config/diaspora.toml:/home/diaspora/diaspora/config/diaspora.toml:ro
       - ./config/diaspora.yml:/home/diaspora/diaspora/config/diaspora.yml:ro
