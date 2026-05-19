@@ -135,14 +135,17 @@ cmd_user_create() {
     diaspora)
       # Diaspora has no user:create CLI. Rails runner builds the record
       # directly. Credentials are passed via env vars to avoid shell history.
+      # Uses `exec` (not `run`) — exec runs inside the already-running container
+      # where the entrypoint has set up PATH with bundle. `run` starts a fresh
+      # container where bundle is not in PATH.
       echo "[bootstrap] Creating Diaspora admin: ${username} <${email}>"
       echo "[bootstrap] Generated password: ${password}"
-      echo "[bootstrap] Change it at: https://${DIASPORA_URL:-your-domain}/profile/edit"
+      echo "[bootstrap] Change it at: ${DIASPORA_URL:-https://your-diaspora-domain/}profile/edit"
       echo ""
       BOOTSTRAP_USERNAME="$username" \
       BOOTSTRAP_EMAIL="$email" \
       BOOTSTRAP_PASSWORD="$password" \
-      dc diaspora run --rm \
+      dc diaspora exec \
         -e BOOTSTRAP_USERNAME \
         -e BOOTSTRAP_EMAIL \
         -e BOOTSTRAP_PASSWORD \
