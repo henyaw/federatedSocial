@@ -10,8 +10,10 @@
 # REQUIRED config files (checked into the repo — present after clone):
 #   config/diaspora.toml  — pod settings; Diaspora 1.x will FATAL on startup
 #                           without it ("Couldn't parse config/diaspora.toml!")
-#   config/diaspora.yml   — legacy settings still read by some subsystems
 #   config/database.yml   — DB connection template (env vars substitute in)
+#
+# diaspora.yml is NOT mounted. When diaspora.toml is present, Diaspora ignores
+# diaspora.yml and warns if both exist. toml is the supported format in 1.x.
 #
 # Do NOT delete these files. Dynamic values (URL, Redis, DB) are injected
 # at runtime via the environment: block below; the files provide the static
@@ -68,7 +70,6 @@ services:
       LANG: C.UTF-8
     volumes:
       - ./config/diaspora.toml:/home/diaspora/diaspora/config/diaspora.toml:ro
-      - ./config/diaspora.yml:/home/diaspora/diaspora/config/diaspora.yml:ro
       - ./config/database.yml:/home/diaspora/diaspora/config/database.yml:ro
       - diaspora-uploads:/home/diaspora/diaspora/public/uploads
     healthcheck:
