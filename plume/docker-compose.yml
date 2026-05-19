@@ -11,6 +11,11 @@
 # adoption. If you outgrow this, the data is portable: it's just a Postgres
 # database, a media directory, and a Tantivy index volume.
 #
+# URL constraint: Plume uses the raw blog name as its URL slug with no
+# sanitization (upstream issue #228, no fix planned). Blog names MUST be
+# URL-safe: use hyphens or CamelCase, no spaces or punctuation.
+# Good: "life-fediverse-everything"  Bad: "Life, the fediverse and everything"
+#
 # First-boot operator steps (run once after `docker compose up -d`):
 #
 #   docker compose run --rm plume plm instance new \
@@ -30,7 +35,6 @@ services:
     image: tailscale/tailscale:latest
     hostname: ${PLUME_WEB_MAGIC_NAME}
     environment:
-      TS_AUTHKEY: ${TS_AUTHKEY:-${TS_OAUTH_CLIENT_SECRET}?ephemeral=true}
       TS_AUTHKEY: ${TS_OAUTH_CLIENT_SECRET}?ephemeral=true
       TS_EXTRA_ARGS: --advertise-tags=tag:plume-web
       TS_HOSTNAME: ${PLUME_WEB_MAGIC_NAME}
