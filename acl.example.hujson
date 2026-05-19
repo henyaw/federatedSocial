@@ -63,10 +63,12 @@
     // below let the host nginx reach the app web tiers over the tailnet.
     "tag:reverse-proxy":        ["autogroup:admin", "tag:reverse-proxy"],
 
+    // Funkwhale
+    "tag:funkwhale-web":         ["autogroup:admin", "tag:funkwhale-web"],
+    "tag:funkwhale-worker":      ["autogroup:admin", "tag:funkwhale-worker"],
+
     // Future stacks — uncomment when you bring them up. Remember to add
     // the self-ownership entry in the same pattern.
-    // "tag:funkwhale-web":     ["autogroup:admin", "tag:funkwhale-web"],
-    // "tag:funkwhale-worker":  ["autogroup:admin", "tag:funkwhale-worker"],
     // "tag:bluesky-pds":       ["autogroup:admin", "tag:bluesky-pds"],
   },
 
@@ -78,7 +80,7 @@
         "tag:pixelfed-web", "tag:pixelfed-worker",
         "tag:mastodon-web", "tag:mastodon-streaming", "tag:mastodon-sidekiq",
         "tag:diaspora-web",
-        // "tag:funkwhale-web", "tag:funkwhale-worker",
+        "tag:funkwhale-web", "tag:funkwhale-worker",
         // "tag:bluesky-pds",
       ],
       "dst": ["tag:db-postgres"],
@@ -91,7 +93,8 @@
         "tag:pixelfed-web", "tag:pixelfed-worker",
         "tag:mastodon-web", "tag:mastodon-streaming", "tag:mastodon-sidekiq",
         "tag:diaspora-web",
-        // "tag:funkwhale-web", "tag:funkwhale-worker",
+        "tag:funkwhale-web", "tag:funkwhale-worker",
+        // "tag:bluesky-pds",
       ],
       "dst": ["tag:db-redis"],
       "ip":  ["tcp:6379"],
@@ -117,9 +120,12 @@
       "dst": ["tag:mastodon-streaming"],
       "ip":  ["tcp:4000"],
     },
-    // "tag:funkwhale-web" and "tag:bluesky-pds" reverse-proxy grants go here
-    // when you uncomment those stacks. Check each app's docker-compose.yml
-    // for its internal listen port.
+    {
+      "src": ["tag:reverse-proxy"],
+      "dst": ["tag:funkwhale-web"],
+      "ip":  ["tcp:80"],
+    },
+    // "tag:bluesky-pds" reverse-proxy grant goes here when you add that stack.
 
     // Admins (you, on your laptop) reach everything for debugging.
     {

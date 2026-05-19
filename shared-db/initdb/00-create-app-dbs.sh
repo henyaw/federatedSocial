@@ -41,4 +41,5 @@ SQL
 
 create_app_db "${PIXELFED_DB_NAME:-}" "${PIXELFED_DB_USER:-}" "${PIXELFED_DB_PASSWORD:-}"
 create_app_db "${MASTODON_DB_NAME:-}" "${MASTODON_DB_USER:-}" "${MASTODON_DB_PASSWORD:-}"
-create_app_db "${DIASPORA_DB_NAME:-}" "${DIASPORA_DB_USER:-}" "${DIASPORA_DB_PASSWORD:-}"
+create_app_db "${DIASPORA_DB_NAME:-}"   "${DIASPORA_DB_USER:-}"   "${DIASPORA_DB_PASSWORD:-}"
+create_app_db "${FUNKWHALE_DB_NAME:-}" "${FUNKWHALE_DB_USER:-}" "${FUNKWHALE_DB_PASSWORD:-}"

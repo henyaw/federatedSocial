@@ -1,0 +1,211 @@
+# Funkwhale — four containers behind two Tailscale sidecars.
+#
+#   ts-funkwhale-web     → api (Gunicorn/ASGI) + front (nginx SPA), public-facing
+#   ts-funkwhale-worker  → celeryworker + celerybeat, internal-only
+#
+# api and front share ts-funkwhale-web's network namespace so that the front
+# nginx can proxy to the api on 127.0.0.1:5000 without a bridge network.
+# celeryworker and celerybeat share ts-funkwhale-worker because both are
+# internal-only and one tailnet identity covers both.
+#
+# Bring up shared-db/ first.
+#
+# First-boot operator steps (run once after `docker compose up -d`):
+#
+#   ./bootstrap.sh user-create funkwhale <username> <email>
+#
+# Or manually:
+#
+#   docker compose run --rm api funkwhale-manage migrate
+#   docker compose run --rm api funkwhale-manage fw users create --superuser \
+#       --username admin --email admin@example.com
+#
+# server.sh (api entrypoint) runs `migrate` and `collectstatic` automatically
+# on every start. Both are idempotent — safe to run repeatedly.
+#
+# Version pinning: set FUNKWHALE_VERSION in .env. Using `latest` risks
+# breaking schema changes on surprise upgrades; pin to a known-good release
+# and bump deliberately. See https://docs.funkwhale.audio/changelog
+
+name: federated-funkwhale
+
+# Shared env for all API-tier containers (api, celeryworker, celerybeat).
+x-api-env: &api-env
+  FUNKWHALE_HOSTNAME: ${FUNKWHALE_DOMAIN}
+  FUNKWHALE_PROTOCOL: https
+  DJANGO_SECRET_KEY: ${FUNKWHALE_DJANGO_SECRET_KEY}
+  DATABASE_URL: postgresql://${FUNKWHALE_DB_USER}:${FUNKWHALE_DB_PASSWORD}@${DB_MAGIC_NAME}.${TS_TAILNET}:5432/${FUNKWHALE_DB_NAME}
+  CACHE_URL: redis://${REDIS_MAGIC_NAME}.${TS_TAILNET}:6379/0
+  MEDIA_ROOT: /srv/funkwhale/data/media
+  STATIC_ROOT: /srv/funkwhale/data/static
+  MUSIC_DIRECTORY_PATH: /music
+  MUSIC_DIRECTORY_SERVE_PATH: /music
+  DJANGO_SETTINGS_MODULE: config.settings.production
+  LOGLEVEL: info
+  # X-Accel-Redirect lets the front nginx serve media files directly.
+  REVERSE_PROXY_TYPE: nginx
+  FUNKWHALE_WEB_WORKERS: "4"
+  CELERYD_CONCURRENCY: "0"
+  # api and front share a network namespace; 127.0.0.1 is their shared lo.
+  FUNKWHALE_API_IP: "127.0.0.1"
+  FUNKWHALE_API_PORT: "5000"
+  EMAIL_CONFIG: ${FUNKWHALE_EMAIL_CONFIG:-consolemail://}
+  DEFAULT_FROM_EMAIL: ${FUNKWHALE_DEFAULT_FROM_EMAIL:-noreply@${FUNKWHALE_DOMAIN}}
+
+services:
+
+  # -------------------------------------------------------------------
+  # Web sidecar — api + front share this namespace
+  # -------------------------------------------------------------------
+
+  ts-funkwhale-web:
+    image: tailscale/tailscale:latest
+    hostname: ${FUNKWHALE_WEB_MAGIC_NAME}
+    environment:
+      TS_AUTHKEY: ${TS_OAUTH_CLIENT_SECRET}?ephemeral=true
+      TS_EXTRA_ARGS: --advertise-tags=tag:funkwhale-web
+      TS_HOSTNAME: ${FUNKWHALE_WEB_MAGIC_NAME}
+      TS_ACCEPT_DNS: "true"
+      TS_AUTH_ONCE: "true"
+      TS_USERSPACE: "false"
+      TS_ENABLE_HEALTH_CHECK: "true"
+      TS_LOCAL_ADDR_PORT: "127.0.0.1:9002"
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9002/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    restart: unless-stopped
+
+  # Django/Gunicorn ASGI. server.sh runs migrate + collectstatic before
+  # starting gunicorn — generous start_period covers first-boot migrations.
+  # Binds to 0.0.0.0:5000 inside this netns (lo + tailscale0 only; no host
+  # or bridge interface). Port 5000 is gated by ACL to autogroup:admin only.
+  api:
+    image: funkwhale/api:${FUNKWHALE_VERSION:-2.0.1}
+    network_mode: "service:ts-funkwhale-web"
+    environment:
+      <<: *api-env
+    volumes:
+      - funkwhale-media:/srv/funkwhale/data/media
+      - funkwhale-static:/srv/funkwhale/data/static
+      - funkwhale-music:/music:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- --tries=1 http://localhost:5000/api/v1/instance/ >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 300s
+    depends_on:
+      ts-funkwhale-web:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Nginx frontend — serves the Vue SPA, static assets, and media via
+  # X-Accel-Redirect; proxies /api/, /federation/, /.well-known/ to
+  # api on 127.0.0.1:5000 (shared network namespace).
+  # Host nginx terminates TLS and proxies to this container on port 80.
+  front:
+    image: funkwhale/front:${FUNKWHALE_VERSION:-2.0.1}
+    network_mode: "service:ts-funkwhale-web"
+    environment:
+      FUNKWHALE_API_IP: "127.0.0.1"
+      FUNKWHALE_API_PORT: "5000"
+      NGINX_MAX_BODY_SIZE: 100M
+    volumes:
+      # media: api writes here; front serves it via X-Accel-Redirect
+      - funkwhale-media:/srv/funkwhale/data/media:ro
+      # static: api's collectstatic writes here; front mounts at nginx path
+      - funkwhale-static:/usr/share/nginx/html/staticfiles:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- --tries=1 http://localhost:80/ >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      ts-funkwhale-web:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # -------------------------------------------------------------------
+  # Worker sidecar — celeryworker + celerybeat share this namespace
+  # -------------------------------------------------------------------
+
+  ts-funkwhale-worker:
+    image: tailscale/tailscale:latest
+    hostname: ${FUNKWHALE_WORKER_MAGIC_NAME}
+    environment:
+      TS_AUTHKEY: ${TS_OAUTH_CLIENT_SECRET}?ephemeral=true
+      TS_EXTRA_ARGS: --advertise-tags=tag:funkwhale-worker
+      TS_HOSTNAME: ${FUNKWHALE_WORKER_MAGIC_NAME}
+      TS_ACCEPT_DNS: "true"
+      TS_AUTH_ONCE: "true"
+      TS_USERSPACE: "false"
+      TS_ENABLE_HEALTH_CHECK: "true"
+      TS_LOCAL_ADDR_PORT: "127.0.0.1:9002"
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9002/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    restart: unless-stopped
+
+  # C_FORCE_ROOT allows Celery to run as root (required when sharing the
+  # sidecar namespace, which runs as root).
+  celeryworker:
+    image: funkwhale/api:${FUNKWHALE_VERSION:-2.0.1}
+    network_mode: "service:ts-funkwhale-worker"
+    command: ["celery", "-A", "funkwhale_api.taskapp", "worker", "-l", "info", "--concurrency=0"]
+    environment:
+      <<: *api-env
+      C_FORCE_ROOT: "true"
+    volumes:
+      - funkwhale-media:/srv/funkwhale/data/media
+      - funkwhale-music:/music:ro
+    healthcheck:
+      test: ["CMD-SHELL", "ps aux | grep -q '[c]elery'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      ts-funkwhale-worker:
+        condition: service_healthy
+    restart: unless-stopped
+
+  celerybeat:
+    image: funkwhale/api:${FUNKWHALE_VERSION:-2.0.1}
+    network_mode: "service:ts-funkwhale-worker"
+    command: ["celery", "-A", "funkwhale_api.taskapp", "beat", "-l", "info"]
+    environment:
+      <<: *api-env
+    healthcheck:
+      test: ["CMD-SHELL", "ps aux | grep -q '[c]elery'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      ts-funkwhale-worker:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  funkwhale-media:
+  funkwhale-static:
+  funkwhale-music:

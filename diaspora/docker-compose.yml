@@ -15,7 +15,6 @@ services:
     image: tailscale/tailscale:latest
     hostname: ${DIASPORA_WEB_MAGIC_NAME}
     environment:
-      TS_AUTHKEY: ${TS_AUTHKEY:-${TS_OAUTH_CLIENT_SECRET}?ephemeral=true}
       TS_AUTHKEY: ${TS_OAUTH_CLIENT_SECRET}?ephemeral=true
       TS_EXTRA_ARGS: --advertise-tags=tag:diaspora-web
       TS_HOSTNAME: ${DIASPORA_WEB_MAGIC_NAME}
