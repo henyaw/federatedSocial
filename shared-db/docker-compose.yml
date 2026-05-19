@@ -20,7 +20,6 @@ services:
     image: tailscale/tailscale:latest
     hostname: ${DB_MAGIC_NAME}
     environment:
-      TS_AUTHKEY: ${TS_AUTHKEY:-${TS_OAUTH_CLIENT_SECRET}?ephemeral=true}
       TS_AUTHKEY: ${TS_OAUTH_CLIENT_SECRET}?ephemeral=true
       TS_EXTRA_ARGS: --advertise-tags=tag:db-postgres
       TS_HOSTNAME: ${DB_MAGIC_NAME}
@@ -63,9 +62,6 @@ services:
       DIASPORA_DB_NAME: ${DIASPORA_DB_NAME}
       DIASPORA_DB_USER: ${DIASPORA_DB_USER}
       DIASPORA_DB_PASSWORD: ${DIASPORA_DB_PASSWORD}
-      PLUME_DB_NAME: ${PLUME_DB_NAME}
-      PLUME_DB_USER: ${PLUME_DB_USER}
-      PLUME_DB_PASSWORD: ${PLUME_DB_PASSWORD}
     volumes:
       - pg-data:/var/lib/postgresql/data
       - ./initdb:/docker-entrypoint-initdb.d:ro
@@ -88,7 +84,6 @@ services:
     image: tailscale/tailscale:latest
     hostname: ${REDIS_MAGIC_NAME}
     environment:
-      TS_AUTHKEY: ${TS_AUTHKEY:-${TS_OAUTH_CLIENT_SECRET}?ephemeral=true}
       TS_AUTHKEY: ${TS_OAUTH_CLIENT_SECRET}?ephemeral=true
       TS_EXTRA_ARGS: --advertise-tags=tag:db-redis
       TS_HOSTNAME: ${REDIS_MAGIC_NAME}
