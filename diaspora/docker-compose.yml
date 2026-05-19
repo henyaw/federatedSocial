@@ -6,6 +6,16 @@
 # sidekiq) and flip embed_sidekiq_worker to false.
 #
 # Bring up shared-db/ first.
+#
+# REQUIRED config files (checked into the repo — present after clone):
+#   config/diaspora.toml  — pod settings; Diaspora 1.x will FATAL on startup
+#                           without it ("Couldn't parse config/diaspora.toml!")
+#   config/diaspora.yml   — legacy settings still read by some subsystems
+#   config/database.yml   — DB connection template (env vars substitute in)
+#
+# Do NOT delete these files. Dynamic values (URL, Redis, DB) are injected
+# at runtime via the environment: block below; the files provide the static
+# defaults that Diaspora requires to parse before env vars take effect.
 
 name: federated-diaspora
 

@@ -6,7 +6,6 @@ shared-db/.env
 pixelfed/.env
 mastodon/.env
 diaspora/.env
-plume/.env
 funkwhale/.env
 bluesky/.env
 
