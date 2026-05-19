@@ -58,9 +58,6 @@
     // Diaspora (single embedded container — sidekiq runs in-process)
     "tag:diaspora-web":         ["autogroup:admin", "tag:diaspora-web"],
 
-    // Plume (single container — worker is in-process)
-    "tag:plume-web":            ["autogroup:admin", "tag:plume-web"],
-
     // Host reverse proxy. Apply this tag to your Debian host machine in
     // the admin console (Machines -> ... -> Edit tags) so the grants
     // below let the host nginx reach the app web tiers over the tailnet.
@@ -77,53 +74,10 @@
     // App tiers reach shared Postgres on TCP/5432 only.
     // Add new app tags to this src list when you bring them up.
     {
-// federated-social Tailscale ACL
-// ----------------------------------------------------------------------------
-// Paste this into the Tailscale admin console under Access Controls.
-// Adjust if you are not running every app — leave a tag in tagOwners but
-// remove its entry from the DB-access rule's `src` list, and the OAuth
-// client will simply never use it.
-//
-// Convention: tag:<app>-<role> for app tiers, tag:db-<engine> for shared
-// services. autogroup:admin owns every tag (no humans authenticated as
-// device-owner; the OAuth client tags devices on creation).
-{
-  "tagOwners": {
-    // Shared infrastructure
-    "tag:db-postgres":          ["autogroup:admin"],
-    "tag:db-redis":             ["autogroup:admin"],
-
-    // Pixelfed
-    "tag:pixelfed-web":         ["autogroup:admin"],
-    "tag:pixelfed-worker":      ["autogroup:admin"],
-
-    // Mastodon
-    "tag:mastodon-web":         ["autogroup:admin"],
-    "tag:mastodon-streaming":   ["autogroup:admin"],
-    "tag:mastodon-sidekiq":     ["autogroup:admin"],
-
-    // Diaspora (single embedded container — sidekiq runs in-process)
-    "tag:diaspora-web":         ["autogroup:admin"],
-
-    // Plume (single container — worker is in-process)
-    "tag:plume-web":            ["autogroup:admin"],
-
-    // Future stacks — uncomment when you bring them up
-    // "tag:funkwhale-web":     ["autogroup:admin"],
-    // "tag:funkwhale-worker":  ["autogroup:admin"],
-    // "tag:bluesky-pds":       ["autogroup:admin"],
-  },
-
-  "acls": [
-    // App tiers may reach the shared databases on their service ports only.
-    // Add new app tags to this src list when you bring them up.
-    {
-      "action": "accept",
       "src": [
         "tag:pixelfed-web", "tag:pixelfed-worker",
         "tag:mastodon-web", "tag:mastodon-streaming", "tag:mastodon-sidekiq",
         "tag:diaspora-web",
-        "tag:plume-web",
         // "tag:funkwhale-web", "tag:funkwhale-worker",
         // "tag:bluesky-pds",
       ],
@@ -137,9 +91,7 @@
         "tag:pixelfed-web", "tag:pixelfed-worker",
         "tag:mastodon-web", "tag:mastodon-streaming", "tag:mastodon-sidekiq",
         "tag:diaspora-web",
-        "tag:plume-web",
         // "tag:funkwhale-web", "tag:funkwhale-worker",
-        // "tag:bluesky-pds",
       ],
       "dst": ["tag:db-redis"],
       "ip":  ["tcp:6379"],
@@ -165,21 +117,15 @@
       "dst": ["tag:mastodon-streaming"],
       "ip":  ["tcp:4000"],
     },
-    {
-      "src": ["tag:reverse-proxy"],
-      "dst": ["tag:plume-web"],
-      "ip":  ["tcp:7878"],
-      "dst": ["tag:db-postgres:5432", "tag:db-redis:6379"],
-    },
+    // "tag:funkwhale-web" and "tag:bluesky-pds" reverse-proxy grants go here
+    // when you uncomment those stacks. Check each app's docker-compose.yml
+    // for its internal listen port.
 
     // Admins (you, on your laptop) reach everything for debugging.
     {
       "src": ["autogroup:admin"],
       "dst": ["*"],
       "ip":  ["*"],
-      "action": "accept",
-      "src": ["autogroup:admin"],
-      "dst": ["*:*"],
     },
   ],
 
@@ -194,8 +140,7 @@
   //     "dst":    ["tag:db-postgres", "tag:db-redis",
   //                "tag:pixelfed-web", "tag:pixelfed-worker",
   //                "tag:mastodon-web", "tag:mastodon-streaming", "tag:mastodon-sidekiq",
-  //                "tag:diaspora-web",
-  //                "tag:plume-web"],
+  //                "tag:diaspora-web"],
   //     "users":  ["root", "autogroup:nonroot"],
   //   },
   // ],
