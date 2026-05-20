@@ -30,6 +30,8 @@ services:
       # 127.0.0.1 ONLY — this endpoint must not be reachable across the
       # tailnet. Compose uses it to wait for tailnet authentication.
       TS_LOCAL_ADDR_PORT: "127.0.0.1:9002"
+    # Bootstrap DNS before Tailscale's MagicDNS is active.
+    dns: [1.1.1.1, 1.0.0.1]
     devices:
       - /dev/net/tun:/dev/net/tun
     cap_add:
@@ -95,6 +97,7 @@ services:
       TS_USERSPACE: "false"
       TS_ENABLE_HEALTH_CHECK: "true"
       TS_LOCAL_ADDR_PORT: "127.0.0.1:9002"
+    dns: [1.1.1.1, 1.0.0.1]
     devices:
       - /dev/net/tun:/dev/net/tun
     cap_add:
