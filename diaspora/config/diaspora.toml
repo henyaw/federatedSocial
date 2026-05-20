@@ -1,4 +1,25 @@
-## Diaspora pod config (TOML form).
+## ===========================================================================
+## WARNING -- DO NOT EDIT WITHOUT READING THIS BLOCK
+## ===========================================================================
+##
+## Two settings in this file are load-bearing. Removing or changing them
+## silently breaks Diaspora with no error messages:
+##
+##   [configuration.server]
+##   listen = "tcp://0.0.0.0:3000"
+##     ^-- Puma 7.x (shipped with Diaspora 1.x) requires the tcp:// scheme.
+##         Without it, Puma rejects the address and exits ~40 s after start,
+##         with no logged error. The container enters a crash loop.
+##
+##   [configuration.environment.assets]
+##   serve = true
+##     ^-- Required in the sidecar pattern (no separate nginx). Without it,
+##         Rails does not serve /assets, and the site loads unstyled.
+##
+## This file is mounted :ro into the container. It is checked into the repo
+## and must not be removed or renamed. See CLAUDE.md for context.
+##
+## ===========================================================================
 ##
 ## Diaspora 1.0 drops support for the old YAML config; this file is the
 ## supported format going forward. Static defaults live here; anything
