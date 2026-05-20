@@ -114,7 +114,7 @@ cmd_user_create() {
       echo ""
       dc mastodon run --rm web \
         bundle exec tootctl accounts create "$username" \
-          --email "$email" --confirmed --role Owner
+          --email "$email" --confirmed --approve --enable --role Owner
       ;;
 
     pixelfed)
