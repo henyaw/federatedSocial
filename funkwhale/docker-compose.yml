@@ -100,7 +100,7 @@ services:
     healthcheck:
       # wget exits 8 on HTTP error responses (including 401 from /api/v1/instance/).
       # Both 0 and 8 mean the server is up and responding; 4 means unreachable.
-      test: ["CMD-SHELL", "wget -qO/dev/null http://localhost:5000/api/v1/instance/; ret=$?; [ $ret -eq 0 ] || [ $ret -eq 8 ]"]
+      test: ["CMD-SHELL", "wget -qO/dev/null http://127.0.0.1:5000/api/v1/instance/; ret=$?; [ $ret -eq 0 ] || [ $ret -eq 8 ]"]
       interval: 30s
       timeout: 10s
       retries: 3
