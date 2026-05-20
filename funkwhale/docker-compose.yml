@@ -98,13 +98,15 @@ services:
       - funkwhale-static:/srv/funkwhale/data/static
       - funkwhale-music:/music:ro
     healthcheck:
-      # wget exits 8 on HTTP error responses (including 401 from /api/v1/instance/).
-      # Both 0 and 8 mean the server is up and responding; 4 means unreachable.
-      test: ["CMD-SHELL", "wget -qO/dev/null http://127.0.0.1:5000/api/v1/instance/; ret=$$?; [ $$ret -eq 0 ] || [ $$ret -eq 8 ]"]
+      # Use Python (guaranteed in this image) so there are no shell variable
+      # escaping issues. Catches HTTPError (401/403) as healthy; only fails
+      # on URLError (connection refused / timeout) meaning gunicorn is down.
+      test: ["CMD", "/venv/bin/python", "-c",
+             "import urllib.request,urllib.error,sys\ntry:\n urllib.request.urlopen('http://127.0.0.1:5000/api/v1/instance/',timeout=5)\nexcept urllib.error.HTTPError:\n pass\nexcept:\n sys.exit(1)"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 300s
+      start_period: 120s
     depends_on:
       ts-funkwhale-web:
         condition: service_healthy
