@@ -133,11 +133,30 @@ cmd_user_create() {
       ;;
 
     diaspora)
-      # Diaspora has no user:create CLI. Rails runner builds the record
-      # directly. Credentials are passed via env vars to avoid shell history.
-      # Uses `exec` (not `run`) — exec runs inside the already-running container
-      # where the entrypoint has set up PATH with bundle. `run` starts a fresh
-      # container where bundle is not in PATH.
+      # Diaspora has no user:create CLI. Uses rails runner via exec into the
+      # running container.
+      #
+      # Three quirks solved here:
+      # 1. bundle lives in RVM dirs (~/.rvm/gems/.../bin) only added to PATH
+      #    by a login shell sourcing ~/.bash_profile. `/bin/bash -lc` does that.
+      # 2. Must run as the `diaspora` user (--user) so RVM reads the right home.
+      # 3. Ruby code is passed via env var (BOOTSTRAP_RUBY) so we don't embed
+      #    Ruby single-quotes inside bash single-quotes inside a shell command.
+      local ruby_code
+      read -r -d '' ruby_code << 'RUBY' || true
+u = User.build(
+  username: ENV["BOOTSTRAP_USERNAME"],
+  email:    ENV["BOOTSTRAP_EMAIL"],
+  password: ENV["BOOTSTRAP_PASSWORD"],
+  password_confirmation: ENV["BOOTSTRAP_PASSWORD"]
+)
+u.getting_started = false
+u.save! or raise u.errors.full_messages.join(", ")
+u.person.profile = Profile.new(first_name: ENV["BOOTSTRAP_USERNAME"])
+u.person.save!
+Role.add_admin(u.person)
+puts "Created: " + u.username + " <" + u.email + ">"
+RUBY
       echo "[bootstrap] Creating Diaspora admin: ${username} <${email}>"
       echo "[bootstrap] Generated password: ${password}"
       echo "[bootstrap] Change it at: ${DIASPORA_URL:-https://your-diaspora-domain/}profile/edit"
@@ -145,24 +164,15 @@ cmd_user_create() {
       BOOTSTRAP_USERNAME="$username" \
       BOOTSTRAP_EMAIL="$email" \
       BOOTSTRAP_PASSWORD="$password" \
+      BOOTSTRAP_RUBY="$ruby_code" \
       dc diaspora exec \
+        --user diaspora \
         -e BOOTSTRAP_USERNAME \
         -e BOOTSTRAP_EMAIL \
         -e BOOTSTRAP_PASSWORD \
-        diaspora bundle exec rails runner "
-          u = User.build(
-            username: ENV['BOOTSTRAP_USERNAME'],
-            email:    ENV['BOOTSTRAP_EMAIL'],
-            password: ENV['BOOTSTRAP_PASSWORD'],
-            password_confirmation: ENV['BOOTSTRAP_PASSWORD']
-          )
-          u.getting_started = false
-          u.save! or raise u.errors.full_messages.join(', ')
-          u.person.profile = Profile.new(first_name: ENV['BOOTSTRAP_USERNAME'])
-          u.person.save!
-          Role.add_admin(u.person)
-          puts \"Created: #{u.username} <#{u.email}>\"
-        "
+        -e BOOTSTRAP_RUBY \
+        diaspora \
+        /bin/bash -lc 'cd /home/diaspora/diaspora && bundle exec rails runner "$BOOTSTRAP_RUBY"'
       ;;
 
     funkwhale)
