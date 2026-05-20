@@ -28,11 +28,17 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${REPO_ROOT}/.env"
 ALL_STACKS=(shared-db pixelfed mastodon diaspora funkwhale)
 
-# Load .env so variable references in messages resolve correctly.
+# Load .env — required before any command.
 if [[ -f "$ENV_FILE" ]]; then
   set -a; source "$ENV_FILE"; set +a
 else
-  echo "Warning: ${ENV_FILE} not found. Copy .env.example to .env and fill it in." >&2
+  echo "Error: ${ENV_FILE} not found." >&2
+  echo "" >&2
+  echo "  cp ${REPO_ROOT}/.env.example ${ENV_FILE}" >&2
+  echo "  \$EDITOR ${ENV_FILE}" >&2
+  echo "" >&2
+  echo "Fill in all required values before running bootstrap.sh." >&2
+  exit 1
 fi
 
 # ---------------------------------------------------------------------------
