@@ -50,6 +50,10 @@ x-mastodon-env: &mastodon-env
   SMTP_AUTH_METHOD: plain
   SMTP_OPENSSL_VERIFY_MODE: peer
 
+  # Trust the Tailscale CGNAT range so RemoteIp middleware sees the real
+  # client IP from X-Forwarded-For rather than the tailnet hop address.
+  TRUSTED_PROXY_IP: "100.64.0.0/10"
+
 services:
 
   # ---------------------------------------------------------------------
@@ -68,6 +72,7 @@ services:
       TS_USERSPACE: "false"
       TS_ENABLE_HEALTH_CHECK: "true"
       TS_LOCAL_ADDR_PORT: "127.0.0.1:9002"
+    dns: [1.1.1.1, 1.0.0.1]
     devices:
       - /dev/net/tun:/dev/net/tun
     cap_add:
@@ -124,6 +129,7 @@ services:
       TS_USERSPACE: "false"
       TS_ENABLE_HEALTH_CHECK: "true"
       TS_LOCAL_ADDR_PORT: "127.0.0.1:9002"
+    dns: [1.1.1.1, 1.0.0.1]
     devices:
       - /dev/net/tun:/dev/net/tun
     cap_add:
@@ -171,6 +177,7 @@ services:
       TS_USERSPACE: "false"
       TS_ENABLE_HEALTH_CHECK: "true"
       TS_LOCAL_ADDR_PORT: "127.0.0.1:9002"
+    dns: [1.1.1.1, 1.0.0.1]
     devices:
       - /dev/net/tun:/dev/net/tun
     cap_add:

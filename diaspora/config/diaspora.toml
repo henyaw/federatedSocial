@@ -37,7 +37,8 @@ concurrency = 5
 ## Bind on all interfaces inside the sidecar netns. The netns has only
 ## `lo` and `tailscale0`; reachability is gated by the host reverse
 ## proxy via MagicDNS + the tag:reverse-proxy ACL grant.
-listen = "0.0.0.0:3000"
+## tcp:// prefix is required by Puma 7.x (Diaspora 1.x ships with Puma 7).
+listen = "tcp://0.0.0.0:3000"
 
 rails_environment = "production"
 
@@ -66,6 +67,8 @@ enable = true
 ## Mail and admin sections are intentionally omitted -- configure later
 ## via MAIL_* and ADMINS_* env vars when you set up SMTP.
 
-[production.environment]
-## Overridable production-specific bits (currently none — everything
-## above already targets production via env vars).
+[configuration.environment.assets]
+## Serve static assets from the Rails app. Required in the sidecar pattern
+## because there is no separate nginx container to handle /assets; without
+## this the site loads unstyled (404 on all CSS/JS).
+serve = true
