@@ -120,6 +120,7 @@ services:
     image: funkwhale/front:${FUNKWHALE_VERSION:-1.3.4}
     network_mode: "service:ts-funkwhale-web"
     environment:
+      <<: *api-env
       FUNKWHALE_API_IP: "127.0.0.1"
       FUNKWHALE_API_PORT: "5000"
       NGINX_MAX_BODY_SIZE: 100M
