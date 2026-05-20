@@ -90,12 +90,15 @@ services:
     image: ghcr.io/mastodon/mastodon:latest
     network_mode: "service:ts-mastodon-web"
     # db:migrate is idempotent — Rails skips already-applied migrations.
-    # db:setup is a no-op if schema exists; runs full setup on empty DB.
+    # db:seed is idempotent — creates built-in roles (Owner/Admin/Moderator)
+    # on first boot; no-ops on subsequent boots. Required before tootctl
+    # accounts create --role Owner, which fails if the roles table is empty.
     command:
       - sh
       - -c
       - |
         bundle exec rails db:migrate &&
+        bundle exec rails db:seed &&
         exec bundle exec puma -C config/puma.rb
     environment:
       <<: *mastodon-env
