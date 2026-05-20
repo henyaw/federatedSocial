@@ -119,6 +119,12 @@ services:
   front:
     image: funkwhale/front:${FUNKWHALE_VERSION:-1.3.4}
     network_mode: "service:ts-funkwhale-web"
+    # The front nginx template hardcodes `upstream api { server api:5000; }`.
+    # In a standard compose setup Docker's bridge DNS resolves the service name.
+    # In the sidecar pattern there is no bridge DNS, but api IS on 127.0.0.1
+    # (shared loopback). extra_hosts injects the mapping into /etc/hosts.
+    extra_hosts:
+      - "api:127.0.0.1"
     environment:
       FUNKWHALE_API_IP: "127.0.0.1"
       FUNKWHALE_API_PORT: "5000"
