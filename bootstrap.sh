@@ -64,6 +64,15 @@ cmd_up() {
   local stack="${1:-}"
   [[ -n "$stack" ]] || die "Usage: ./bootstrap.sh up <stack>"
   require_stack "$stack"
+
+  # Ensure a per-stack .env symlink exists so operators can also run
+  # docker compose directly inside the stack directory.
+  local stack_env="${REPO_ROOT}/${stack}/.env"
+  if [[ ! -e "$stack_env" ]]; then
+    ln -s "../.env" "$stack_env"
+    echo "[bootstrap] Created ${stack}/.env -> ../.env"
+  fi
+
   echo "[bootstrap] Starting ${stack}..."
   dc "$stack" up -d
   echo "[bootstrap] ${stack} is up. Tip: ./bootstrap.sh logs ${stack}"
