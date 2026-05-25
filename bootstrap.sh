@@ -26,7 +26,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${REPO_ROOT}/.env"
-ALL_STACKS=(shared-db pixelfed mastodon diaspora funkwhale)
+ALL_STACKS=(shared-db pixelfed mastodon diaspora funkwhale gotosocial)
 
 # Load .env — required before any command.
 if [[ -f "$ENV_FILE" ]]; then
@@ -204,10 +204,26 @@ RUBY
           --email "$email" \
           --password "$password"
       ;;
+ 
+    gotosocial)
+      echo "[bootstrap] Creating Pixelfed admin: ${username} <${email}>"
+      echo "[bootstrap] Generated password: ${password}"
+      echo "[bootstrap] Change it at: https://${GOTOSOCIAL_URL:-your-domain}/settings"
+      echo ""
+      dc gotosocial run --rm web \
+        ./gotosocial --config-path /gotosocial/config.yaml \
+          admin account create \
+            --username "$username" \
+            --email "$email" \
+            --password '$"password"'
+        ./gotosocial --config-path /gotosocial/config.yaml \
+          admin account promote --username "$username"
+      ;;
 
     *)
       die "Unknown app '${app}'. Valid: mastodon pixelfed diaspora funkwhale"
       ;;
+
   esac
 }
 
