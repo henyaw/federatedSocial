@@ -1,23 +1,10 @@
-# Diaspora — single embedded container behind one Tailscale sidecar.
+# GoToSocial — single binary, no separate workers or streaming tier.
 #
-# Sidekiq runs inside the unicorn process via SERVER_EMBED_SIDEKIQ_WORKER=true
-# (see config/diaspora.yml). For small-to-medium pods this is fine; if you
-# outgrow it, split sidekiq into its own service + sidecar (tag:diaspora-
-# sidekiq) and flip embed_sidekiq_worker to false.
+# Bring up shared-db/ first. On a fresh pg-data volume the initdb script
+# creates the gotosocial user/database automatically. On an existing
+# volume, run the manual bootstrap command from the repo README.
 #
-# Bring up shared-db/ first.
-#
-# REQUIRED config files (checked into the repo — present after clone):
-#   config/diaspora.toml  — pod settings; Diaspora 1.x will FATAL on startup
-#                           without it ("Couldn't parse config/diaspora.toml!")
-#   config/database.yml   — DB connection template (env vars substitute in)
-#
-# diaspora.yml is NOT mounted. When diaspora.toml is present, Diaspora ignores
-# diaspora.yml and warns if both exist. toml is the supported format in 1.x.
-#
-# Do NOT delete these files. Dynamic values (URL, Redis, DB) are injected
-# at runtime via the environment: block below; the files provide the static
-# defaults that Diaspora requires to parse before env vars take effect.
+# GoToSocial has no Redis dependency.
 
 name: federated-gotosocial
 
@@ -53,41 +40,36 @@ services:
     image: docker.io/superseriousbusiness/gotosocial:latest
     network_mode: "service:ts-gotosocial-web"
     environment:
-      ENVIRONMENT_URL: ${GOTOSOCIAL_URL}
-      GTS_DB_HOST: ${DB_MAGIC_NAME}.${TS_TAILNET}
+      GTS_HOST: ${GOTOSOCIAL_URL}
+      GTS_DB_TYPE: postgres
+      # GTS_DB_ADDRESS must be written inline. Docker Compose does not expand
+      # variables inside other variables, so ${DB_MAGIC_NAME}.${TS_TAILNET}
+      # cannot live inside an intermediate var like GOTOSOCIAL_DB_HOST.
+      GTS_DB_ADDRESS: ${DB_MAGIC_NAME}.${TS_TAILNET}
       GTS_DB_PORT: "5432"
       GTS_DB_NAME: ${GOTOSOCIAL_DB_NAME}
       GTS_DB_USER: ${GOTOSOCIAL_DB_USER}
       GTS_DB_PASSWORD: ${GOTOSOCIAL_DB_PASSWORD}
-      #GTS_DB_POSTGRES_CONNECTION_STRING: ${GOTOSOCIAL_DB_USER}:${GOTOSOCIAL_DB_PASSWORD}@${GOTOSOCIAL_DB_HOST}:${GOTOSOCIAL_DB_PORT}
-      GTS_HOST: ${GOTOSOCIAL_URL}
-      GTS_DB_TYPE: postgres
       GTS_LETSENCRYPT_ENABLED: "false"
-      # Path in the GtS Docker container where the
-      # Wazero compilation cache will be stored.
       GTS_WAZERO_COMPILATION_CACHE: /gotosocial/.cache
-      ## For reverse proxy setups:
       GTS_TRUSTED_PROXIES: ${GOTOSOCIAL_PROXY}
       GTS_SMTP_HOST: ${GOTOSOCIAL_SMTP_HOST}
       GTS_SMTP_PORT: ${GOTOSOCIAL_SMTP_PORT}
       GTS_SMTP_USER: ${GOTOSOCIAL_SMTP_USER}
       GTS_SMTP_PASSWORD: ${GOTOSOCIAL_SMTP_PASSWORD}
       GTS_SMTP_FROM: ${GOTOSOCIAL_SMTP_FROM}
-      GTS-_SMTP_DISPLAY_NAME: ${GOTOSOCIAL_SMTP_DISPLAY_NAME}
+      GTS_SMTP_DISPLAY_NAME: ${GOTOSOCIAL_SMTP_DISPLAY_NAME}
       GTS_CONFIG_PATH: /gotosocial/config.yaml
-      ## Set the timezone of your server:
-      #TZ: UTC
     volumes:
       - ./gotosocial/.cache:/gotosocial/.cache
       - ./gotosocial/config.yaml:/gotosocial/config.yaml
+      - gotosocialuploads:/gotosocial/storage
     healthcheck:
-      # Diaspora returns 200 on / once the app server is up. Generous
-      # start_period — first boot includes asset precompile + migrations.
-      test: ["CMD-SHELL", "curl -f -s -o /dev/null http://localhost:3000/ || exit 1"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 300s
+      start_period: 120s
     depends_on:
       ts-gotosocial-web:
         condition: service_healthy
