@@ -210,15 +210,17 @@ RUBY
       echo "[bootstrap] Generated password: ${password}"
       echo "[bootstrap] Change it at: https://${GOTOSOCIAL_URL:-your-domain}/settings"
       echo ""
+      # The GTS Docker image entrypoint is already the gotosocial binary.
+      # Pass subcommands directly — do NOT prefix with ./gotosocial.
+      # GTS_CONFIG_PATH is set in the compose service env, so --config-path
+      # is also unnecessary here.
       dc gotosocial run --rm gotosocial \
-        ./gotosocial --config-path /gotosocial/config.yaml \
-          admin account create \
-            --username "$username" \
-            --email "$email" \
-            --password "$password"
+        admin account create \
+          --username "$username" \
+          --email "$email" \
+          --password "$password"
       dc gotosocial run --rm gotosocial \
-        ./gotosocial --config-path /gotosocial/config.yaml \
-          admin account promote --username "$username"
+        admin account promote --username "$username"
       ;;
 
     *)
