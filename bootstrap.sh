@@ -206,22 +206,23 @@ RUBY
       ;;
  
     gotosocial)
-      echo "[bootstrap] Creating Pixelfed admin: ${username} <${email}>"
+      echo "[bootstrap] Creating GoToSocial admin: ${username} <${email}>"
       echo "[bootstrap] Generated password: ${password}"
       echo "[bootstrap] Change it at: https://${GOTOSOCIAL_URL:-your-domain}/settings"
       echo ""
-      dc gotosocial run --rm web \
+      dc gotosocial run --rm gotosocial \
         ./gotosocial --config-path /gotosocial/config.yaml \
           admin account create \
             --username "$username" \
             --email "$email" \
-            --password '$"password"'
+            --password "$password"
+      dc gotosocial run --rm gotosocial \
         ./gotosocial --config-path /gotosocial/config.yaml \
           admin account promote --username "$username"
       ;;
 
     *)
-      die "Unknown app '${app}'. Valid: mastodon pixelfed diaspora funkwhale"
+      die "Unknown app '${app}'. Valid: mastodon pixelfed diaspora funkwhale gotosocial"
       ;;
 
   esac
