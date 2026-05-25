@@ -61,7 +61,7 @@ services:
       GTS_SMTP_DISPLAY_NAME: ${GOTOSOCIAL_SMTP_DISPLAY_NAME}
       GTS_CONFIG_PATH: /gotosocial/config.yaml
     volumes:
-      - ./gotosocial/.cache:/gotosocial/.cache
+      - gotosocial-wazero-cache:/gotosocial/.cache
       - ./gotosocial/config.yaml:/gotosocial/config.yaml
       - gotosocialuploads:/gotosocial/storage
     healthcheck:
@@ -77,3 +77,4 @@ services:
 
 volumes:
   gotosocialuploads:
+  gotosocial-wazero-cache:
