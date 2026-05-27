@@ -13,7 +13,7 @@
 #   ./bootstrap.sh ps   [stack]                  show container status
 #   ./bootstrap.sh user-create <app> <username> <email>
 #
-# <stack>/<app>: shared-db | pixelfed | mastodon | diaspora | funkwhale | gotosocial
+# <stack>/<app>: shared-db | pixelfed | mastodon | diaspora | funkwhale | gotosocial | peertube
 #
 # user-create requires the stack to already be running (the app sidecar must
 # be up for the run container to get network access). Run `up` first.
@@ -26,7 +26,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${REPO_ROOT}/.env"
-ALL_STACKS=(shared-db pixelfed mastodon diaspora funkwhale gotosocial)
+ALL_STACKS=(shared-db pixelfed mastodon diaspora funkwhale gotosocial peertube)
 
 # Load .env — required before any command.
 if [[ -f "$ENV_FILE" ]]; then
@@ -205,6 +205,21 @@ RUBY
           --password "$password"
       ;;
  
+    peertube)
+      # PeerTube auto-creates the "root" admin on first boot and prints a
+      # random password to the container logs. There is no admin-create CLI;
+      # the username/email args are ignored. After first login change the
+      # password and email via the web UI.
+      echo "[bootstrap] Retrieving auto-generated PeerTube root password from logs..."
+      echo "[bootstrap] (Provided username/email args are ignored — root is the only auto-created user.)"
+      echo ""
+      dc peertube logs peertube 2>&1 | grep -iE "user.*password|root.*password|admin.*password" \
+        || die "Could not find password in logs. Try: dc peertube logs peertube | grep -i password
+If the container has been restarted many times, the boot-time log line may have rolled off.
+You can reset the root password instead:
+  docker exec -it federated-peertube-peertube-1 npm run reset-password -- -u root"
+      ;;
+
     gotosocial)
       echo "[bootstrap] Creating GoToSocial admin: ${username} <${email}>"
       echo "[bootstrap] Generated password: ${password}"
@@ -226,7 +241,7 @@ RUBY
       ;;
 
     *)
-      die "Unknown app '${app}'. Valid: mastodon pixelfed diaspora funkwhale gotosocial"
+      die "Unknown app '${app}'. Valid: mastodon pixelfed diaspora funkwhale gotosocial peertube"
       ;;
 
   esac

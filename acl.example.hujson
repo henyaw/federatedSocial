@@ -67,6 +67,16 @@
     "tag:funkwhale-web":         ["autogroup:admin", "tag:funkwhale-web"],
     "tag:funkwhale-worker":      ["autogroup:admin", "tag:funkwhale-worker"],
 
+    // GoToSocial (single container — no separate worker tier)
+    "tag:gotosocial-web":        ["autogroup:admin", "tag:gotosocial-web"],
+
+    // PeerTube (single container; serves both HTTP and RTMP from one sidecar)
+    "tag:peertube-web":          ["autogroup:admin", "tag:peertube-web"],
+
+    // Optional: tag your streaming/broadcast machines so they can publish
+    // RTMP to PeerTube without going through a public ingest proxy.
+    // "tag:streamer":          ["autogroup:admin", "tag:streamer"],
+
     // Future stacks — uncomment when you bring them up. Remember to add
     // the self-ownership entry in the same pattern.
     // "tag:bluesky-pds":       ["autogroup:admin", "tag:bluesky-pds"],
@@ -81,6 +91,8 @@
         "tag:mastodon-web", "tag:mastodon-streaming", "tag:mastodon-sidekiq",
         "tag:diaspora-web",
         "tag:funkwhale-web", "tag:funkwhale-worker",
+        "tag:gotosocial-web",
+        "tag:peertube-web",
         // "tag:bluesky-pds",
       ],
       "dst": ["tag:db-postgres"],
@@ -88,12 +100,14 @@
     },
 
     // App tiers reach shared Redis on TCP/6379 only.
+    // GoToSocial is intentionally omitted — it has no Redis dependency.
     {
       "src": [
         "tag:pixelfed-web", "tag:pixelfed-worker",
         "tag:mastodon-web", "tag:mastodon-streaming", "tag:mastodon-sidekiq",
         "tag:diaspora-web",
         "tag:funkwhale-web", "tag:funkwhale-worker",
+        "tag:peertube-web",
         // "tag:bluesky-pds",
       ],
       "dst": ["tag:db-redis"],
@@ -125,6 +139,31 @@
       "dst": ["tag:funkwhale-web"],
       "ip":  ["tcp:80"],
     },
+    {
+      "src": ["tag:reverse-proxy"],
+      "dst": ["tag:gotosocial-web"],
+      "ip":  ["tcp:8080"],
+    },
+    {
+      "src": ["tag:reverse-proxy"],
+      "dst": ["tag:peertube-web"],
+      "ip":  ["tcp:9000"],
+    },
+
+    // PeerTube RTMP live ingest. By default, only the host nginx (which
+    // can stream-proxy public :1935 to here) and admins reach the RTMP
+    // listener. Uncomment the streamer block to let tagged streaming
+    // boxes publish directly over the tailnet without a public proxy.
+    {
+      "src": ["tag:reverse-proxy"],
+      "dst": ["tag:peertube-web"],
+      "ip":  ["tcp:1935"],
+    },
+    // {
+    //   "src": ["tag:streamer"],
+    //   "dst": ["tag:peertube-web"],
+    //   "ip":  ["tcp:1935"],
+    // },
     // "tag:bluesky-pds" reverse-proxy grant goes here when you add that stack.
 
     // Admins (you, on your laptop) reach everything for debugging.
@@ -146,7 +185,10 @@
   //     "dst":    ["tag:db-postgres", "tag:db-redis",
   //                "tag:pixelfed-web", "tag:pixelfed-worker",
   //                "tag:mastodon-web", "tag:mastodon-streaming", "tag:mastodon-sidekiq",
-  //                "tag:diaspora-web"],
+  //                "tag:diaspora-web",
+  //                "tag:funkwhale-web", "tag:funkwhale-worker",
+  //                "tag:gotosocial-web",
+  //                "tag:peertube-web"],
   //     "users":  ["root", "autogroup:nonroot"],
   //   },
   // ],

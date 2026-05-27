@@ -1,6 +1,6 @@
 # Federated Social Stack
 
-Self-host federated social services (Pixelfed, Mastodon, Diaspora, Funkwhale, GoToSocial, and more) on a single server with shared database infrastructure and Tailscale-based networking. No firewall rules to write. No internal services exposed to the public internet. Edit one file, run `docker compose up -d`, done.
+Self-host federated social services (Pixelfed, Mastodon, Diaspora, Funkwhale, GoToSocial, PeerTube, and more) on a single server with shared database infrastructure and Tailscale-based networking. No firewall rules to write. No internal services exposed to the public internet. Edit one file, run `docker compose up -d`, done.
 
 ## What you get
 
@@ -179,6 +179,16 @@ docker compose -f shared-db/docker-compose.yml exec postgres \
     CREATE ROLE <app> LOGIN PASSWORD '<password>';
     CREATE DATABASE <app> OWNER <app>;
     GRANT ALL PRIVILEGES ON DATABASE <app> TO <app>;"
+```
+
+PeerTube additionally needs three extensions in its database. After creating the role and database above, run:
+
+```bash
+docker compose -f shared-db/docker-compose.yml exec postgres \
+  psql -U postgres -d peertube -c "
+    CREATE EXTENSION IF NOT EXISTS pg_trgm;
+    CREATE EXTENSION IF NOT EXISTS unaccent;
+    CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";"
 ```
 
 **Sidecar shows "needs login" or doesn't appear in admin console**

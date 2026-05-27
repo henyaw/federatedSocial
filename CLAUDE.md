@@ -302,6 +302,6 @@ These are deliberately unresolved and should be flagged to the user when relevan
 - **Multi-host clustering**: current design is single-host. Moving Postgres to a dedicated host on the tailnet is a known future step but not implemented.
 - **Backup strategy for `pg-data` and similar volumes**: not yet templated. Operator's responsibility for now.
 - **Cert management for host Nginx**: assumed to be the operator's existing process (Let's Encrypt via certbot or similar). Not in scope for this repo.
-- **Object storage for media** (Pixelfed/Funkwhale uploads): currently local volume. S3-compatible backend templating is a future concern.
+- **Object storage for media**: PeerTube has S3 templated (opt-in via `PEERTUBE_OBJECT_STORAGE_*` env vars in `.env.example`). Pixelfed and Funkwhale are still local-volume only — retrofit them with the same `<APP>_OBJECT_STORAGE_*` pattern when an operator needs it.
 
 If a user request touches one of these, say so and ask before implementing.
