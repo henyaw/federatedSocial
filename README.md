@@ -1,6 +1,6 @@
 # Federated Social Stack
 
-Self-host federated social services (Pixelfed, Mastodon, Funkwhale, and more) on a single server with shared database infrastructure and Tailscale-based networking. No firewall rules to write. No internal services exposed to the public internet. Edit one file, run `docker compose up -d`, done.
+Self-host federated social services (Pixelfed, Mastodon, Diaspora, Funkwhale, GoToSocial, and more) on a single server with shared database infrastructure and Tailscale-based networking. No firewall rules to write. No internal services exposed to the public internet. Edit one file, run `docker compose up -d`, done.
 
 ## What you get
 
@@ -168,6 +168,18 @@ Set up something automated before you have data you'd miss losing.
 **App container keeps restarting with "database connection refused"**
 
 Almost always means the database sidecar isn't healthy yet. Check `docker compose ps` in the `shared-db/` directory — both sidecars should show `(healthy)`. If they don't, check their logs. If they do, check that the app's `.env` values for `DB_HOST` match what the database stack is advertising.
+
+**Adding an app after shared-db has already run once — its DB user doesn't exist**
+
+The `shared-db/initdb/00-create-app-dbs.sh` script only runs on a fresh `pg-data` volume. If you add a new app's credentials to `.env` after the first boot, Postgres skips initdb and the new role/database are never created. Create them manually (substitute your password from `.env`):
+
+```bash
+docker compose -f shared-db/docker-compose.yml exec postgres \
+  psql -U postgres -c "
+    CREATE ROLE <app> LOGIN PASSWORD '<password>';
+    CREATE DATABASE <app> OWNER <app>;
+    GRANT ALL PRIVILEGES ON DATABASE <app> TO <app>;"
+```
 
 **Sidecar shows "needs login" or doesn't appear in admin console**
 

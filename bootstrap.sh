@@ -13,7 +13,7 @@
 #   ./bootstrap.sh ps   [stack]                  show container status
 #   ./bootstrap.sh user-create <app> <username> <email>
 #
-# <stack>/<app>: shared-db | pixelfed | mastodon | diaspora | funkwhale
+# <stack>/<app>: shared-db | pixelfed | mastodon | diaspora | funkwhale | gotosocial
 #
 # user-create requires the stack to already be running (the app sidecar must
 # be up for the run container to get network access). Run `up` first.

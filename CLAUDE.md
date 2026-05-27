@@ -270,6 +270,15 @@ Compose `depends_on` cannot enforce this across separate compose files. The heal
 6. Update `README.md` operator instructions.
 7. Verify: no `ports:` directives, every sidecar has `TS_ACCEPT_DNS: "true"`, every app has `depends_on: condition: service_healthy`, all hostnames use `${VAR}.${TS_TAILNET}` form.
 
+### Pitfalls learned the hard way
+
+- **Compose does not expand variables inside other variables.** Writing `MY_HOST=${DB_MAGIC_NAME}.${TS_TAILNET}` and then referencing `${MY_HOST}` produces an empty string. Always inline `${DB_MAGIC_NAME}.${TS_TAILNET}` directly in the consuming env var (e.g. `GTS_DB_ADDRESS`, `DATABASE_HOST`).
+- **Check the app's actual env-var → config-key mapping before naming variables.** Several apps derive env-var names mechanically from config keys (GoToSocial: `db-address` → `GTS_DB_ADDRESS`, not `GTS_DB_HOST`). A wrong name is silently ignored and the app falls back to the mounted config file, producing misleading errors.
+- **Many official images set the binary as `ENTRYPOINT`.** When invoking via `docker compose run <svc> <cmd>`, do NOT prefix with the binary name — that becomes the first argv and scrambles the CLI parser. Pass subcommands directly.
+- **`docker compose run` parses its own flags interspersedly** and will swallow app flags that overlap (notably `--user`/`--username`). For app admin commands that take `--username`, use `docker exec` into the already-running container instead of `docker compose run`.
+- **Bind-mounted cache directories inherit host ownership.** For caches that the app writes to as a non-root uid (e.g. GTS Wazero cache), use a named volume instead — Docker manages ownership from the image filesystem.
+- **`shared-db/initdb/*.sh` only runs on an empty pg-data volume.** Adding a new app's DB credentials after first boot requires manual `CREATE ROLE` / `CREATE DATABASE` via `docker compose exec`. The README has the snippet under "Troubleshooting".
+
 ## What not to do
 
 - **Don't add `ports:` to any internal service.** If a port is needed externally, route it through host Nginx + MagicDNS.
