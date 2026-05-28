@@ -71,3 +71,62 @@ diaspora.example.com {
 plume.example.com {
   reverse_proxy plume.tailfe8c.ts.net:7878
 }
+
+# ---------------------------------------------------------------------------
+# Funkwhale
+# ---------------------------------------------------------------------------
+# The funkwhale `front` container (nginx serving the Vue SPA and proxying to
+# the API on 127.0.0.1:5000 inside its shared netns) listens on :80. Audio
+# uploads can be large; the front nginx is configured for 100M
+# (NGINX_MAX_BODY_SIZE in funkwhale/docker-compose.yml). Match here.
+funkwhale.example.com {
+  request_body {
+    max_size 100MB
+  }
+  reverse_proxy funkwhale.tailfe8c.ts.net:80
+}
+
+# ---------------------------------------------------------------------------
+# GoToSocial
+# ---------------------------------------------------------------------------
+# GTS serves everything (web, API, federation, streaming WebSockets) on :8080.
+# Caddy upgrades WebSockets transparently. Media-local-max-size defaults to
+# 40 MiB; bump both here and gotosocial config if you raise it.
+gotosocial.example.com {
+  request_body {
+    max_size 40MB
+  }
+  reverse_proxy gotosocial.tailfe8c.ts.net:8080
+}
+
+# ---------------------------------------------------------------------------
+# PeerTube (HTTP/HTTPS)
+# ---------------------------------------------------------------------------
+# PeerTube serves the web UI, API, federation, and live-streaming WebSocket
+# (/socket.io) on :9000. Caddy upgrades WebSockets automatically.
+#
+# Uploads are large by design — raise max_size to a comfortable ceiling for
+# your instance. The long write/read timeouts are for slow uploads on
+# residential connections.
+#
+# NOTE: RTMP live ingest is a separate concern. Caddy does not proxy raw TCP
+# (no equivalent to nginx's stream module). If you need PUBLIC RTMP ingest,
+# either:
+#   - have streamers publish directly to the tailnet hostname
+#     (rtmp://peertube.tailfe8c.ts.net:1935 — most secure, no public
+#     exposure), or
+#   - run nginx alongside Caddy for just the stream {} block — see
+#     nginx/sites-available/peertube-rtmp.conf for the reference snippet.
+peertube.example.com {
+  request_body {
+    max_size 8GB
+  }
+  reverse_proxy peertube.tailfe8c.ts.net:9000 {
+    transport http {
+      read_timeout 600s
+      write_timeout 600s
+      dial_timeout 30s
+    }
+    flush_interval -1
+  }
+}
