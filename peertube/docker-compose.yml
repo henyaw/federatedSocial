@@ -86,7 +86,7 @@ services:
 
       # ---- Admin + secrets ----
       PEERTUBE_ADMIN_EMAIL: ${PEERTUBE_ADMIN_EMAIL}
-      PEERTUBE_SECRETS_PEERTUBE: ${PEERTUBE_SECRET}
+      PEERTUBE_SECRET: ${PEERTUBE_SECRET}
 
       # ---- SMTP (optional but recommended) ----
       PEERTUBE_SMTP_HOSTNAME: ${PEERTUBE_SMTP_HOST}
