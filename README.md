@@ -171,25 +171,13 @@ Almost always means the database sidecar isn't healthy yet. Check `docker compos
 
 **Adding an app after shared-db has already run once — its DB user doesn't exist**
 
-The `shared-db/initdb/00-create-app-dbs.sh` script only runs on a fresh `pg-data` volume. If you add a new app's credentials to `.env` after the first boot, Postgres skips initdb and the new role/database are never created. Create them manually (substitute your password from `.env`):
+The `shared-db/initdb/00-create-app-dbs.sh` script only runs on a fresh `pg-data` volume. If you add a new app after first boot, use `bootstrap.sh provision-db` instead — it is idempotent and works on any volume state:
 
 ```bash
-docker compose -f shared-db/docker-compose.yml exec postgres \
-  psql -U postgres -c "
-    CREATE ROLE <app> LOGIN PASSWORD '<password>';
-    CREATE DATABASE <app> OWNER <app>;
-    GRANT ALL PRIVILEGES ON DATABASE <app> TO <app>;"
+./bootstrap.sh provision-db peertube   # or pixelfed, mastodon, etc.
 ```
 
-PeerTube additionally needs three extensions in its database. After creating the role and database above, run:
-
-```bash
-docker compose -f shared-db/docker-compose.yml exec postgres \
-  psql -U postgres -d peertube -c "
-    CREATE EXTENSION IF NOT EXISTS pg_trgm;
-    CREATE EXTENSION IF NOT EXISTS unaccent;
-    CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";"
-```
+`./bootstrap.sh up <app>` also calls this automatically when shared-db is running, so the normal bring-up flow handles it end-to-end.
 
 **Sidecar shows "needs login" or doesn't appear in admin console**
 
