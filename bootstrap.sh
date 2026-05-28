@@ -11,9 +11,14 @@
 #   ./bootstrap.sh down <stack>                  tear down a stack
 #   ./bootstrap.sh logs <stack> [service]        tail logs
 #   ./bootstrap.sh ps   [stack]                  show container status
+#   ./bootstrap.sh provision-db <app>            idempotent DB + role setup
 #   ./bootstrap.sh user-create <app> <username> <email>
 #
 # <stack>/<app>: shared-db | pixelfed | mastodon | diaspora | funkwhale | gotosocial | peertube
+#
+# provision-db is called automatically by 'up'. Run it standalone if you add
+# a new app after shared-db has already been running (the initdb path only
+# fires on a fresh pg-data volume; provision-db works any time).
 #
 # user-create requires the stack to already be running (the app sidecar must
 # be up for the run container to get network access). Run `up` first.
@@ -63,8 +68,82 @@ require_stack() {
 }
 
 # ---------------------------------------------------------------------------
+# DB provisioning helpers — idempotent, safe to re-run at any time.
+# ---------------------------------------------------------------------------
+
+# Run psql as superuser inside the shared-db postgres container.
+_pg_exec() {
+  local container
+  container=$(dc shared-db ps -q postgres 2>/dev/null | head -1)
+  [[ -n "$container" ]] || die "Postgres container not found. Is shared-db running? ./bootstrap.sh up shared-db"
+  docker exec -i "$container" psql -v ON_ERROR_STOP=1 --username postgres "$@"
+}
+
+# Idempotent role + database: creates on first run, updates password on re-runs.
+_provision_role_db() {
+  local user="$1" password="$2" dbname="$3"
+  echo "[bootstrap] Provisioning role '${user}' and database '${dbname}'..."
+  _pg_exec --dbname postgres <<SQL
+DO \$\$
+BEGIN
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${user}') THEN
+    CREATE ROLE "${user}" LOGIN PASSWORD '${password}';
+  ELSE
+    ALTER ROLE "${user}" WITH LOGIN PASSWORD '${password}';
+  END IF;
+END
+\$\$;
+SELECT 'CREATE DATABASE "${dbname}" OWNER "${user}"'
+WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '${dbname}')\gexec
+GRANT ALL PRIVILEGES ON DATABASE "${dbname}" TO "${user}";
+SQL
+}
+
+# Idempotent extension install (requires superuser, hence run here not by app).
+_provision_extension() {
+  local dbname="$1" ext="$2"
+  _pg_exec --dbname "$dbname" -c "CREATE EXTENSION IF NOT EXISTS \"${ext}\";"
+}
+
+# ---------------------------------------------------------------------------
 # Commands
 # ---------------------------------------------------------------------------
+
+cmd_provision_db() {
+  local app="${1:-}"
+  [[ -n "$app" ]] || die "Usage: ./bootstrap.sh provision-db <app>"
+
+  case "$app" in
+    shared-db)
+      echo "[bootstrap] shared-db has no app database to provision."
+      ;;
+    pixelfed)
+      _provision_role_db "${PIXELFED_DB_USER}" "${PIXELFED_DB_PASSWORD}" "${PIXELFED_DB_NAME}"
+      ;;
+    mastodon)
+      _provision_role_db "${MASTODON_DB_USER}" "${MASTODON_DB_PASSWORD}" "${MASTODON_DB_NAME}"
+      ;;
+    diaspora)
+      _provision_role_db "${DIASPORA_DB_USER}" "${DIASPORA_DB_PASSWORD}" "${DIASPORA_DB_NAME}"
+      ;;
+    funkwhale)
+      _provision_role_db "${FUNKWHALE_DB_USER}" "${FUNKWHALE_DB_PASSWORD}" "${FUNKWHALE_DB_NAME}"
+      ;;
+    gotosocial)
+      _provision_role_db "${GOTOSOCIAL_DB_USER}" "${GOTOSOCIAL_DB_PASSWORD}" "${GOTOSOCIAL_DB_NAME}"
+      ;;
+    peertube)
+      _provision_role_db "${PEERTUBE_DB_USER}" "${PEERTUBE_DB_PASSWORD}" "${PEERTUBE_DB_NAME}"
+      _provision_extension "${PEERTUBE_DB_NAME}" pg_trgm
+      _provision_extension "${PEERTUBE_DB_NAME}" unaccent
+      _provision_extension "${PEERTUBE_DB_NAME}" uuid-ossp
+      ;;
+    *)
+      die "Unknown app '${app}'. Valid: pixelfed mastodon diaspora funkwhale gotosocial peertube"
+      ;;
+  esac
+  echo "[bootstrap] DB provisioning complete for ${app}."
+}
 
 cmd_up() {
   local stack="${1:-}"
@@ -77,6 +156,20 @@ cmd_up() {
   if [[ ! -e "$stack_env" ]]; then
     ln -s "../.env" "$stack_env"
     echo "[bootstrap] Created ${stack}/.env -> ../.env"
+  fi
+
+  # Provision DB before starting the app (idempotent — safe on fresh or
+  # existing volumes). Skip for shared-db itself and skip gracefully if
+  # shared-db isn't up yet (operator will need to run up shared-db first).
+  if [[ "$stack" != "shared-db" ]]; then
+    local pg_container
+    pg_container=$(dc shared-db ps -q postgres 2>/dev/null | head -1)
+    if [[ -n "$pg_container" ]]; then
+      cmd_provision_db "$stack"
+    else
+      echo "[bootstrap] Warning: shared-db postgres not running — skipping DB provisioning."
+      echo "[bootstrap] Bring up shared-db first: ./bootstrap.sh up shared-db"
+    fi
   fi
 
   echo "[bootstrap] Starting ${stack}..."
@@ -138,6 +231,7 @@ cmd_user_create() {
       echo "[bootstrap] Creating Pixelfed admin: ${username} <${email}>"
       echo "[bootstrap] Generated password: ${password}"
       echo "[bootstrap] Change it at: https://${PIXELFED_DOMAIN:-your-domain}/settings"
+      echo "[bootstrap] NOTE: password reset requires SMTP to be configured (no reset CLI exists)."
       echo ""
       dc pixelfed run --rm web \
         php artisan user:create \
@@ -204,7 +298,7 @@ RUBY
           --email "$email" \
           --password "$password"
       ;;
- 
+
     peertube)
       # PeerTube auto-creates the "root" admin on first boot and prints a
       # random password to the container logs. There is no admin-create CLI;
@@ -214,7 +308,7 @@ RUBY
       echo "[bootstrap] (Provided username/email args are ignored — root is the only auto-created user.)"
       echo ""
       dc peertube logs peertube 2>&1 | grep -iE "user.*password|root.*password|admin.*password" \
-        || die "Could not find password in logs. Try: dc peertube logs peertube | grep -i password
+        || die "Could not find password in logs. Try: ./bootstrap.sh logs peertube peertube | grep -i password
 If the container has been restarted many times, the boot-time log line may have rolled off.
 You can reset the root password instead:
   docker exec -it federated-peertube-peertube-1 npm run reset-password -- -u root"
@@ -251,23 +345,26 @@ usage() {
   cat <<EOF
 Usage: ./bootstrap.sh <command> [args]
 
-  up   <stack>                   Bring up a stack
-  down <stack>                   Tear down a stack
-  logs <stack> [service]         Tail logs (Ctrl-C to stop)
-  ps   [stack]                   Show container status for one or all stacks
-  user-create <app> <user> <email>   Create an admin user
+  up           <stack>               Bring up a stack (auto-provisions DB)
+  down         <stack>               Tear down a stack
+  logs         <stack> [service]     Tail logs (Ctrl-C to stop)
+  ps           [stack]               Show container status for one or all stacks
+  provision-db <app>                 Idempotent DB role + database setup
+  user-create  <app> <user> <email>  Create an admin user
 
 Stacks: ${ALL_STACKS[*]}
 
 Examples:
   ./bootstrap.sh up shared-db
   ./bootstrap.sh up mastodon
+  ./bootstrap.sh provision-db peertube
   ./bootstrap.sh user-create mastodon alice alice@example.com
   ./bootstrap.sh user-create funkwhale alice alice@example.com
   ./bootstrap.sh ps
   ./bootstrap.sh logs mastodon web
 
-Note: user-create requires the stack to be running first (./bootstrap.sh up <app>).
+Note: 'up' calls provision-db automatically when shared-db is running.
+      Run shared-db first, then 'up <app>' — the DB will be ready.
 EOF
 }
 
@@ -283,6 +380,7 @@ case "$command" in
   down)         cmd_down "$@" ;;
   logs)         cmd_logs "$@" ;;
   ps)           cmd_ps "$@" ;;
+  provision-db) cmd_provision_db "$@" ;;
   user-create)  cmd_user_create "$@" ;;
   help|--help|-h) usage ;;
   *) echo "Unknown command: ${command}"; echo ""; usage; exit 1 ;;
