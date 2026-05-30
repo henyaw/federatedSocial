@@ -53,12 +53,15 @@ services:
       GTS_LETSENCRYPT_ENABLED: "false"
       GTS_WAZERO_COMPILATION_CACHE: /gotosocial/.cache
       GTS_TRUSTED_PROXIES: ${GOTOSOCIAL_PROXY}
-      GTS_SMTP_HOST: ${GOTOSOCIAL_SMTP_HOST}
-      GTS_SMTP_PORT: ${GOTOSOCIAL_SMTP_PORT}
-      GTS_SMTP_USER: ${GOTOSOCIAL_SMTP_USER}
-      GTS_SMTP_PASSWORD: ${GOTOSOCIAL_SMTP_PASSWORD}
+      # SMTP host/port/user/password come from the shared SMTP_* relay in .env;
+      # only the sender address and display name are GTS-specific. GTS disables
+      # email automatically when GTS_SMTP_HOST is empty.
+      GTS_SMTP_HOST: ${SMTP_HOST}
+      GTS_SMTP_PORT: ${SMTP_PORT}
+      GTS_SMTP_USER: ${SMTP_USER}
+      GTS_SMTP_PASSWORD: ${SMTP_PASSWORD}
       GTS_SMTP_FROM: ${GOTOSOCIAL_SMTP_FROM}
-      GTS_SMTP_DISPLAY_NAME: ${GOTOSOCIAL_SMTP_DISPLAY_NAME}
+      GTS_SMTP_DISPLAY_NAME: ${SMTP_FROM_NAME}
       GTS_CONFIG_PATH: /gotosocial/config.yaml
     volumes:
       - gotosocial-wazero-cache:/gotosocial/.cache

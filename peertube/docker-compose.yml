@@ -89,12 +89,16 @@ services:
       PEERTUBE_SECRET: ${PEERTUBE_SECRET}
 
       # ---- SMTP (optional but recommended) ----
-      PEERTUBE_SMTP_HOSTNAME: ${PEERTUBE_SMTP_HOST}
-      PEERTUBE_SMTP_PORT: ${PEERTUBE_SMTP_PORT}
-      PEERTUBE_SMTP_USERNAME: ${PEERTUBE_SMTP_USER}
-      PEERTUBE_SMTP_PASSWORD: ${PEERTUBE_SMTP_PASSWORD}
+      # Host/port/user/password come from the shared SMTP_* relay in .env;
+      # only the sender address is PeerTube-specific.
+      PEERTUBE_SMTP_HOSTNAME: ${SMTP_HOST}
+      PEERTUBE_SMTP_PORT: ${SMTP_PORT}
+      PEERTUBE_SMTP_USERNAME: ${SMTP_USER}
+      PEERTUBE_SMTP_PASSWORD: ${SMTP_PASSWORD}
       PEERTUBE_SMTP_FROM: ${PEERTUBE_SMTP_FROM}
-      PEERTUBE_SMTP_TLS: "true"
+      # TLS=false + STARTTLS is correct for port 587 (the shared default).
+      # For implicit-TLS relays on port 465, set PEERTUBE_SMTP_TLS=true in .env.
+      PEERTUBE_SMTP_TLS: ${PEERTUBE_SMTP_TLS:-false}
 
       # ---- Live streaming (RTMP) ----
       # Bound to 0.0.0.0 inside the sidecar netns. The netns only has lo

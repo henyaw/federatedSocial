@@ -97,6 +97,17 @@ MASTODON_DOMAIN=
 
 When adding a new app or component, add its env vars to `.env.example` with sensible defaults or empty placeholders, and document any non-obvious value in a comment.
 
+### Shared infrastructure credentials
+
+Two cross-cutting concerns are configured **once** and mapped into every app, rather than per-app:
+
+- **SMTP relay**: `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD` / `SMTP_FROM_NAME`. Each app's compose maps these into the app-specific names it expects (Mastodon `SMTP_SERVER`, GoToSocial `GTS_SMTP_HOST`, PeerTube `PEERTUBE_SMTP_HOSTNAME`, Pixelfed `MAIL_HOST`, Diaspora `CONFIGURATION_MAIL_SMTP_HOST`). Funkwhale is the exception — it takes a single `EMAIL_CONFIG` connection string, so it can't read the discrete vars; document the `smtp+tls://` form with the URL-encoding caveat instead.
+- **Garage S3**: `GARAGE_ACCESS_KEY_ID` / `GARAGE_SECRET_ACCESS_KEY` / `GARAGE_REGION`, mapped into each app's S3 opt-in block.
+
+Per-app values that legitimately differ (sender addresses, bucket names, enable toggles) stay in the app's own section. When adding a new app, wire its SMTP and S3 to the shared vars; only add a new per-app var when the value genuinely can't be shared.
+
+**Compose can't nest variable defaults** (`${A:-${B}}` is unreliable — see the pitfalls section), so you can't do "per-app override falling back to shared." Map the shared var directly; if an operator needs a different relay for one app, they edit that compose file.
+
 ## Sidecar boilerplate
 
 Every Tailscale sidecar service uses this skeleton. Deviations need a stated reason.
