@@ -58,6 +58,23 @@ services:
       ENVIRONMENT_URL: ${DIASPORA_URL}
       ENVIRONMENT_REDIS: redis://${REDIS_MAGIC_NAME}.${TS_TAILNET}:6379
 
+      # Email — configuration.mail.* config keys mapped to env vars with the
+      # same convention as ENVIRONMENT_* above (keep top-level section, dots
+      # to underscores, uppercase). Host/port/user/password come from the
+      # shared SMTP_* relay in .env; only the toggle + sender are per-app.
+      # Diaspora leaves mail disabled when CONFIGURATION_MAIL_ENABLE=false.
+      CONFIGURATION_MAIL_ENABLE: ${DIASPORA_MAIL_ENABLE:-false}
+      CONFIGURATION_MAIL_SENDER_ADDRESS: ${DIASPORA_MAIL_SENDER_ADDRESS:-noreply@example.com}
+      CONFIGURATION_MAIL_METHOD: smtp
+      CONFIGURATION_MAIL_SMTP_HOST: ${SMTP_HOST:-}
+      CONFIGURATION_MAIL_SMTP_PORT: ${SMTP_PORT:-587}
+      CONFIGURATION_MAIL_SMTP_USERNAME: ${SMTP_USER:-}
+      CONFIGURATION_MAIL_SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      # "plain" auth + STARTTLS is correct for port 587. Set authentication
+      # to "none" (and disable starttls) only for an unauthenticated relay.
+      CONFIGURATION_MAIL_SMTP_AUTHENTICATION: plain
+      CONFIGURATION_MAIL_SMTP_STARTTLS_AUTO: "true"
+
       # Postgres connection (read by config/database.yml's ERB).
       DIASPORA_DB_HOST: ${DB_MAGIC_NAME}.${TS_TAILNET}
       DIASPORA_DB_PORT: "5432"

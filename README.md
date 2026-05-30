@@ -163,6 +163,32 @@ The repo doesn't ship a backup automation. At minimum, back up:
 
 Set up something automated before you have data you'd miss losing.
 
+## Email (SMTP)
+
+Every app shares one SMTP relay. Fill in the `SMTP_*` block in `.env` once
+(`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`) and each app maps it
+into the variable names it expects — you don't configure email six times.
+Per-app sender addresses live in each app's `.env` section since they differ
+by domain.
+
+Do this **before creating your admin user**. Several apps (Pixelfed most
+notably) have no password-reset CLI — without working email, a forgotten
+admin password means editing the database by hand. To turn email on after
+filling in the relay:
+
+- **Pixelfed**: set `PIXELFED_MAIL_DRIVER=smtp` (default `log` just writes to
+  the app log).
+- **Diaspora**: set `DIASPORA_MAIL_ENABLE=true`.
+- **Mastodon / GoToSocial / PeerTube**: send automatically once `SMTP_HOST` is
+  set.
+- **Funkwhale**: takes a single connection string instead of discrete fields.
+  Set `FUNKWHALE_EMAIL_CONFIG=smtp+tls://USER:PASSWORD@HOST:PORT`
+  (URL-encode special characters in USER/PASSWORD).
+
+Port 587 (STARTTLS) is the default throughout. For an implicit-TLS relay on
+port 465, set `SMTP_PORT=465` and flip the per-app TLS switch where one
+exists (e.g. `PEERTUBE_SMTP_TLS=true`, `PIXELFED_MAIL_ENCRYPTION=ssl`).
+
 ## Troubleshooting
 
 **App container keeps restarting with "database connection refused"**

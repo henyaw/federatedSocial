@@ -26,6 +26,19 @@ x-pixelfed-env: &pixelfed-env
   REDIS_HOST: ${REDIS_MAGIC_NAME}.${TS_TAILNET}
   REDIS_PORT: "6379"
   ENFORCE_EMAIL_VERIFICATION: ${PIXELFED_ENFORCE_EMAIL_VERIFICATION:-false}
+  # ---- Email ----
+  # Driver defaults to 'log' (mail written to the Laravel log, no relay).
+  # Set PIXELFED_MAIL_DRIVER=smtp in .env once the shared SMTP_* relay is
+  # configured. Host/port/user/password come from the shared block; only the
+  # sender address and (TLS/SSL) encryption are Pixelfed-specific.
+  MAIL_DRIVER: ${PIXELFED_MAIL_DRIVER:-log}
+  MAIL_HOST: ${SMTP_HOST:-}
+  MAIL_PORT: ${SMTP_PORT:-587}
+  MAIL_USERNAME: ${SMTP_USER:-}
+  MAIL_PASSWORD: ${SMTP_PASSWORD:-}
+  MAIL_ENCRYPTION: ${PIXELFED_MAIL_ENCRYPTION:-tls}
+  MAIL_FROM_ADDRESS: ${PIXELFED_MAIL_FROM_ADDRESS:-noreply@${PIXELFED_DOMAIN}}
+  MAIL_FROM_NAME: ${SMTP_FROM_NAME:-Pixelfed}
   # ---- Object storage (S3 via Garage) — opt in ----
   # Set PIXELFED_FS_DRIVER=s3 in .env to store uploads in Garage instead of
   # the local pixelfed-storage volume.
