@@ -277,7 +277,8 @@ Compose `depends_on` cannot enforce this across separate compose files. The heal
 - **Many official images set the binary as `ENTRYPOINT`.** When invoking via `docker compose run <svc> <cmd>`, do NOT prefix with the binary name — that becomes the first argv and scrambles the CLI parser. Pass subcommands directly.
 - **`docker compose run` parses its own flags interspersedly** and will swallow app flags that overlap (notably `--user`/`--username`). For app admin commands that take `--username`, use `docker exec` into the already-running container instead of `docker compose run`.
 - **Bind-mounted cache directories inherit host ownership.** For caches that the app writes to as a non-root uid (e.g. GTS Wazero cache), use a named volume instead — Docker manages ownership from the image filesystem.
-- **`shared-db/initdb/*.sh` only runs on an empty pg-data volume.** Adding a new app's DB credentials after first boot requires manual `CREATE ROLE` / `CREATE DATABASE` via `docker compose exec`. The README has the snippet under "Troubleshooting".
+- **`shared-db/initdb/*.sh` only runs on an empty pg-data volume.** Use `bootstrap.sh provision-db <app>` instead — it is idempotent and works on any volume state.
+- **Passwords with `/` or `+` break `DATABASE_URL`-style connection strings.** Apps that assemble a URI from parts (e.g. Funkwhale: `postgresql://user:password@host/db`) will mis-parse a base64 password containing slashes as URI path separators. Use `openssl rand -hex 32` for any password embedded in a URL, and note this constraint in `.env.example` next to the affected variable.
 
 ## What not to do
 
