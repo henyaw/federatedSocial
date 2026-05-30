@@ -1,0 +1,81 @@
+# Garage — distributed S3-compatible object storage.
+#
+# All app stacks in this repo can store media here instead of local volumes,
+# making instances portable across servers and load-balancer-friendly.
+#
+# Single-node by default (replication_factor = 1 in garage.toml). To expand
+# to multiple nodes across servers or countries:
+#   1. Bring up a second Garage container with the same GARAGE_RPC_SECRET.
+#   2. Add its tailnet address to rpc_bootstrap_peers in garage.toml.
+#   3. Raise replication_factor in garage.toml and restart.
+#   4. Re-run: ./bootstrap.sh provision-garage
+#
+# Bring up shared-db/ first, then garage/, then app stacks.
+#
+# First-boot operator steps (run once after `docker compose up -d`):
+#
+#   ./bootstrap.sh provision-garage
+#
+# That command initialises the cluster layout, creates all app buckets,
+# creates an access key, and prints GARAGE_ACCESS_KEY_ID +
+# GARAGE_SECRET_ACCESS_KEY — paste those into .env, then bring up app stacks.
+# Re-running is idempotent.
+
+name: federated-garage
+
+services:
+
+  ts-garage:
+    image: tailscale/tailscale:latest
+    hostname: ${GARAGE_MAGIC_NAME}
+    environment:
+      TS_AUTHKEY: ${TS_OAUTH_CLIENT_SECRET}?ephemeral=true
+      TS_EXTRA_ARGS: --advertise-tags=tag:garage
+      TS_HOSTNAME: ${GARAGE_MAGIC_NAME}
+      TS_ACCEPT_DNS: "true"
+      TS_AUTH_ONCE: "true"
+      TS_USERSPACE: "false"
+      TS_ENABLE_HEALTH_CHECK: "true"
+      TS_LOCAL_ADDR_PORT: "127.0.0.1:9002"
+    dns: [1.1.1.1, 1.0.0.1]
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9002/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    restart: unless-stopped
+
+  garage:
+    image: dxflrs/garage:${GARAGE_VERSION:-v1.0.1}
+    network_mode: "service:ts-garage"
+    environment:
+      # Overrides the placeholder rpc_secret in garage.toml at runtime.
+      # All nodes in the same cluster must share this value.
+      GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET}
+    volumes:
+      - ./garage.toml:/etc/garage.toml:ro
+      - garage-meta:/var/lib/garage/meta
+      - garage-data:/var/lib/garage/data
+    healthcheck:
+      # GET /health returns 200 once Garage is ready to serve S3 requests.
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3900/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      ts-garage:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  # metadata: small, critical — Garage cluster state, bucket/key directory.
+  garage-meta:
+  # data: large — actual object bytes.
+  garage-data:

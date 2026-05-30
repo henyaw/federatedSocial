@@ -1,0 +1,34 @@
+# Garage configuration for the federated-social stack.
+#
+# rpc_secret is overridden at runtime by the GARAGE_RPC_SECRET environment
+# variable — the placeholder below prevents startup errors. The actual value
+# comes from .env and is passed into the container by docker-compose.yml.
+#
+# To expand to multiple nodes:
+#   - Add new node addresses to rpc_bootstrap_peers below.
+#   - Raise replication_factor (2 = tolerate 1 node loss, 3 = tolerate 2).
+#   - All nodes must share the same rpc_secret and replication_factor.
+#   - Re-run: ./bootstrap.sh provision-garage to assign the new node.
+
+metadata_dir = "/var/lib/garage/meta"
+data_dir     = "/var/lib/garage/data"
+
+# 1 = single-node (no replication). Safe to start with; raise when adding nodes.
+replication_factor = 1
+
+# Placeholder — overridden by GARAGE_RPC_SECRET env var at container start.
+rpc_secret    = "0000000000000000000000000000000000000000000000000000000000000000"
+rpc_bind_addr = "0.0.0.0:3901"
+
+# Uncomment and populate when adding a second node:
+# rpc_bootstrap_peers = ["<node-id>@<tailnet-hostname>:3901"]
+
+[s3_api]
+# Region name presented to S3 clients. Must match GARAGE_REGION in .env.
+s3_region     = "garage"
+api_bind_addr = "0.0.0.0:3900"
+
+[admin]
+# Admin API bound to loopback only — reachable via `docker exec`, not over
+# the tailnet. bootstrap.sh provision-garage uses it this way.
+api_bind_addr = "127.0.0.1:3903"
