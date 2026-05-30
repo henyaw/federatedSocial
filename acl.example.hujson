@@ -73,6 +73,9 @@
     // PeerTube (single container; serves both HTTP and RTMP from one sidecar)
     "tag:peertube-web":          ["autogroup:admin", "tag:peertube-web"],
 
+    // Garage — shared S3-compatible object storage
+    "tag:garage":                ["autogroup:admin", "tag:garage"],
+
     // Optional: tag your streaming/broadcast machines so they can publish
     // RTMP to PeerTube without going through a public ingest proxy.
     // "tag:streamer":          ["autogroup:admin", "tag:streamer"],
@@ -165,6 +168,22 @@
     //   "ip":  ["tcp:1935"],
     // },
     // "tag:bluesky-pds" reverse-proxy grant goes here when you add that stack.
+
+    // App tiers reach Garage S3 API on TCP/3900.
+    // Add new app tags here when you bring them up.
+    {
+      "src": [
+        "tag:pixelfed-web", "tag:pixelfed-worker",
+        "tag:mastodon-web", "tag:mastodon-streaming", "tag:mastodon-sidekiq",
+        "tag:diaspora-web",
+        "tag:funkwhale-web", "tag:funkwhale-worker",
+        "tag:gotosocial-web",
+        "tag:peertube-web",
+        "tag:db-postgres",  // shared-db pg-backup service uses Garage too
+      ],
+      "dst": ["tag:garage"],
+      "ip":  ["tcp:3900"],
+    },
 
     // Admins (you, on your laptop) reach everything for debugging.
     {

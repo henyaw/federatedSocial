@@ -12,13 +12,19 @@
 #   ./bootstrap.sh logs <stack> [service]        tail logs
 #   ./bootstrap.sh ps   [stack]                  show container status
 #   ./bootstrap.sh provision-db <app>            idempotent DB + role setup
+#   ./bootstrap.sh provision-garage              idempotent Garage bucket + key setup
 #   ./bootstrap.sh user-create <app> <username> <email>
 #
-# <stack>/<app>: shared-db | pixelfed | mastodon | diaspora | funkwhale | gotosocial | peertube
+# <stack>/<app>: shared-db | garage | pixelfed | mastodon | diaspora | funkwhale | gotosocial | peertube
 #
-# provision-db is called automatically by 'up'. Run it standalone if you add
-# a new app after shared-db has already been running (the initdb path only
-# fires on a fresh pg-data volume; provision-db works any time).
+# Bring-up order: shared-db → garage → app stacks.
+#
+# provision-db is called automatically by 'up' for app stacks. Run it
+# standalone if you add a new app after shared-db has already been running.
+#
+# provision-garage is called automatically by 'up garage'. Run it standalone
+# after first boot to initialize the cluster layout, create buckets, and
+# generate the access key. Re-running is idempotent.
 #
 # user-create requires the stack to already be running (the app sidecar must
 # be up for the run container to get network access). Run `up` first.
@@ -31,7 +37,9 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${REPO_ROOT}/.env"
-ALL_STACKS=(shared-db pixelfed mastodon diaspora funkwhale gotosocial peertube)
+ALL_STACKS=(shared-db garage pixelfed mastodon diaspora funkwhale gotosocial peertube)
+# Stacks that need a Postgres DB provisioned before starting.
+DB_STACKS=(pixelfed mastodon diaspora funkwhale gotosocial peertube)
 
 # Load .env — required before any command.
 if [[ -f "$ENV_FILE" ]]; then
@@ -145,6 +153,87 @@ cmd_provision_db() {
   echo "[bootstrap] DB provisioning complete for ${app}."
 }
 
+cmd_provision_garage() {
+  local container
+  container=$(dc garage ps -q garage 2>/dev/null | head -1)
+  [[ -n "$container" ]] || die "Garage is not running. Start it first: ./bootstrap.sh up garage"
+
+  # Inline Garage CLI wrapper — all garage commands run inside the container.
+  _g() { docker exec "$container" garage "$@"; }
+
+  echo "[bootstrap] Checking Garage cluster layout..."
+
+  local layout_version
+  layout_version=$(_g layout show 2>/dev/null \
+    | grep -oE 'Current cluster layout version: [0-9]+' \
+    | grep -oE '[0-9]+$' || echo "0")
+
+  if [[ "$layout_version" == "0" ]]; then
+    echo "[bootstrap] Initializing cluster layout (zone=${GARAGE_ZONE:-dc1}, capacity=${GARAGE_CAPACITY:-100G})..."
+    local node_id
+    node_id=$(_g node id 2>/dev/null | head -1 | cut -d@ -f1)
+    [[ -n "$node_id" ]] || die "Could not get Garage node ID. Check: ./bootstrap.sh logs garage garage"
+    _g layout assign "$node_id" \
+      --zone     "${GARAGE_ZONE:-dc1}" \
+      --capacity "${GARAGE_CAPACITY:-100G}" \
+      --tag      "${GARAGE_MAGIC_NAME}"
+    _g layout apply --version 1
+    echo "[bootstrap] Layout applied (version 1)."
+  else
+    echo "[bootstrap] Layout already at version ${layout_version} — skipping."
+  fi
+
+  echo "[bootstrap] Ensuring buckets..."
+  local buckets=(pg-backups mastodon-media pixelfed-media peertube-web-videos peertube-streaming-playlists funkwhale-music)
+  for bucket in "${buckets[@]}"; do
+    if _g bucket create "$bucket" 2>/dev/null; then
+      echo "[bootstrap]   created: ${bucket}"
+    else
+      echo "[bootstrap]   exists:  ${bucket}"
+    fi
+  done
+
+  echo "[bootstrap] Ensuring access key 'federated-social-apps'..."
+  local key_output
+  if key_output=$(_g key create federated-social-apps 2>&1); then
+    echo "[bootstrap] Key created."
+  elif echo "$key_output" | grep -qi "already\|exists"; then
+    echo "[bootstrap] Key exists."
+    key_output=$(_g key info federated-social-apps 2>/dev/null || true)
+  else
+    die "Garage key error: ${key_output}"
+  fi
+
+  echo "[bootstrap] Granting key access to all buckets..."
+  for bucket in "${buckets[@]}"; do
+    _g bucket allow "$bucket" --read --write --owner --key federated-social-apps 2>/dev/null || true
+  done
+
+  local key_id secret_key
+  key_id=$(echo    "$key_output" | grep -i "Key ID"     | awk '{print $NF}')
+  secret_key=$(echo "$key_output" | grep -i "Secret key" | awk '{print $NF}')
+
+  echo ""
+  echo "[bootstrap] ============================================================"
+  if [[ -n "$key_id" && -n "$secret_key" ]]; then
+    echo "[bootstrap] Add these to your .env:"
+    echo ""
+    echo "  GARAGE_ACCESS_KEY_ID=${key_id}"
+    echo "  GARAGE_SECRET_ACCESS_KEY=${secret_key}"
+    echo ""
+    echo "[bootstrap] Then opt in apps via .env and restart their stacks:"
+    echo "  MASTODON_S3_ENABLED=true"
+    echo "  PIXELFED_FS_DRIVER=s3"
+    echo "  PEERTUBE_OBJECT_STORAGE_ENABLED=true"
+  else
+    echo "[bootstrap] Key already existed — secret is not redisplayable."
+    echo "[bootstrap] To rotate: docker exec <container> garage key delete federated-social-apps"
+    echo "[bootstrap]   then re-run: ./bootstrap.sh provision-garage"
+    [[ -n "$key_id" ]] && echo "  GARAGE_ACCESS_KEY_ID=${key_id}"
+  fi
+  echo "[bootstrap] ============================================================"
+}
+
 cmd_up() {
   local stack="${1:-}"
   [[ -n "$stack" ]] || die "Usage: ./bootstrap.sh up <stack>"
@@ -158,10 +247,12 @@ cmd_up() {
     echo "[bootstrap] Created ${stack}/.env -> ../.env"
   fi
 
-  # Provision DB before starting the app (idempotent — safe on fresh or
-  # existing volumes). Skip for shared-db itself and skip gracefully if
-  # shared-db isn't up yet (operator will need to run up shared-db first).
-  if [[ "$stack" != "shared-db" ]]; then
+  # Provision DB for app stacks (idempotent — safe on fresh or existing
+  # volumes). Skip for shared-db and garage; skip gracefully if shared-db
+  # isn't up yet.
+  local is_db_stack=0
+  for s in "${DB_STACKS[@]}"; do [[ "$s" == "$stack" ]] && is_db_stack=1; done
+  if [[ $is_db_stack -eq 1 ]]; then
     local pg_container
     pg_container=$(dc shared-db ps -q postgres 2>/dev/null | head -1)
     if [[ -n "$pg_container" ]]; then
@@ -170,6 +261,15 @@ cmd_up() {
       echo "[bootstrap] Warning: shared-db postgres not running — skipping DB provisioning."
       echo "[bootstrap] Bring up shared-db first: ./bootstrap.sh up shared-db"
     fi
+  fi
+
+  # After Garage comes up, auto-run provision-garage (idempotent).
+  # Skipped if layout is already initialized — effectively a no-op on restarts.
+  if [[ "$stack" == "garage" ]]; then
+    echo "[bootstrap] Waiting for Garage to be healthy before provisioning..."
+    dc garage up -d --wait 2>/dev/null || true
+    cmd_provision_garage
+    return 0
   fi
 
   echo "[bootstrap] Starting ${stack}..."
@@ -345,12 +445,13 @@ usage() {
   cat <<EOF
 Usage: ./bootstrap.sh <command> [args]
 
-  up           <stack>               Bring up a stack (auto-provisions DB)
-  down         <stack>               Tear down a stack
-  logs         <stack> [service]     Tail logs (Ctrl-C to stop)
-  ps           [stack]               Show container status for one or all stacks
-  provision-db <app>                 Idempotent DB role + database setup
-  user-create  <app> <user> <email>  Create an admin user
+  up               <stack>               Bring up a stack
+  down             <stack>               Tear down a stack
+  logs             <stack> [service]     Tail logs (Ctrl-C to stop)
+  ps               [stack]               Show container status for one or all stacks
+  provision-db     <app>                 Idempotent DB role + database setup
+  provision-garage                       Idempotent Garage layout + bucket + key setup
+  user-create      <app> <user> <email>  Create an admin user
 
 Stacks: ${ALL_STACKS[*]}
 
@@ -380,8 +481,9 @@ case "$command" in
   down)         cmd_down "$@" ;;
   logs)         cmd_logs "$@" ;;
   ps)           cmd_ps "$@" ;;
-  provision-db) cmd_provision_db "$@" ;;
-  user-create)  cmd_user_create "$@" ;;
+  provision-db)      cmd_provision_db "$@" ;;
+  provision-garage)  cmd_provision_garage ;;
+  user-create)       cmd_user_create "$@" ;;
   help|--help|-h) usage ;;
   *) echo "Unknown command: ${command}"; echo ""; usage; exit 1 ;;
 esac

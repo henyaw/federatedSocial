@@ -12,6 +12,36 @@
 
 name: federated-pixelfed
 
+# Shared env for all Pixelfed containers. Each service merges this anchor
+# with <<: *pixelfed-env and adds its own DOCKER_SERVICE_NAME.
+x-pixelfed-env: &pixelfed-env
+  TZ: "UTC"
+  APP_DOMAIN: ${PIXELFED_DOMAIN}
+  APP_KEY: ${PIXELFED_APP_KEY}
+  DB_HOST: ${DB_MAGIC_NAME}.${TS_TAILNET}
+  DB_PORT: "5432"
+  DB_DATABASE: ${PIXELFED_DB_NAME}
+  DB_USERNAME: ${PIXELFED_DB_USER}
+  DB_PASSWORD: ${PIXELFED_DB_PASSWORD}
+  REDIS_HOST: ${REDIS_MAGIC_NAME}.${TS_TAILNET}
+  REDIS_PORT: "6379"
+  ENFORCE_EMAIL_VERIFICATION: ${PIXELFED_ENFORCE_EMAIL_VERIFICATION:-false}
+  # ---- Object storage (S3 via Garage) — opt in ----
+  # Set PIXELFED_FS_DRIVER=s3 in .env to store uploads in Garage instead of
+  # the local pixelfed-storage volume.
+  # AWS_USE_PATH_STYLE_ENDPOINT=true is required — Garage uses path-style API
+  # (http://endpoint/bucket/key), not virtual-hosted (http://bucket.endpoint/key).
+  FILESYSTEM_DRIVER: ${PIXELFED_FS_DRIVER:-local}
+  AWS_ACCESS_KEY_ID: ${GARAGE_ACCESS_KEY_ID:-}
+  AWS_SECRET_ACCESS_KEY: ${GARAGE_SECRET_ACCESS_KEY:-}
+  AWS_DEFAULT_REGION: ${GARAGE_REGION:-garage}
+  AWS_BUCKET: ${PIXELFED_S3_BUCKET:-pixelfed-media}
+  # Inline MagicDNS — Compose does not expand vars inside vars.
+  AWS_ENDPOINT: http://${GARAGE_MAGIC_NAME}.${TS_TAILNET}:3900
+  AWS_USE_PATH_STYLE_ENDPOINT: "true"
+  # Optional CDN URL for public media. Leave blank = use Garage endpoint.
+  AWS_URL: ${PIXELFED_S3_URL:-}
+
 services:
 
   # ---------------------------------------------------------------------
@@ -50,18 +80,8 @@ services:
     entrypoint: ["/usr/local/bin/ts-entrypoint.sh"]
     command: ["forego", "start", "-r"]
     environment:
-      TZ: "UTC"
+      <<: *pixelfed-env
       DOCKER_SERVICE_NAME: "web"
-      APP_DOMAIN: ${PIXELFED_DOMAIN}
-      APP_KEY: ${PIXELFED_APP_KEY}
-      DB_HOST: ${DB_MAGIC_NAME}.${TS_TAILNET}
-      DB_PORT: "5432"
-      DB_DATABASE: ${PIXELFED_DB_NAME}
-      DB_USERNAME: ${PIXELFED_DB_USER}
-      DB_PASSWORD: ${PIXELFED_DB_PASSWORD}
-      REDIS_HOST: ${REDIS_MAGIC_NAME}.${TS_TAILNET}
-      REDIS_PORT: "6379"
-      ENFORCE_EMAIL_VERIFICATION: ${PIXELFED_ENFORCE_EMAIL_VERIFICATION:-false}
     volumes:
       - ./entrypoint-wrapper.sh:/usr/local/bin/ts-entrypoint.sh:ro
       - pixelfed-storage:/var/www/storage
@@ -114,19 +134,9 @@ services:
     command: ["gosu", "www-data", "php", "artisan", "horizon"]
     stop_signal: SIGTERM
     environment:
-      TZ: "UTC"
+      <<: *pixelfed-env
       DOCKER_SERVICE_NAME: "worker"
       ENTRYPOINT_SKIP_SCRIPTS: "any"
-      APP_DOMAIN: ${PIXELFED_DOMAIN}
-      APP_KEY: ${PIXELFED_APP_KEY}
-      DB_HOST: ${DB_MAGIC_NAME}.${TS_TAILNET}
-      DB_PORT: "5432"
-      DB_DATABASE: ${PIXELFED_DB_NAME}
-      DB_USERNAME: ${PIXELFED_DB_USER}
-      DB_PASSWORD: ${PIXELFED_DB_PASSWORD}
-      REDIS_HOST: ${REDIS_MAGIC_NAME}.${TS_TAILNET}
-      REDIS_PORT: "6379"
-      ENFORCE_EMAIL_VERIFICATION: ${PIXELFED_ENFORCE_EMAIL_VERIFICATION:-false}
     volumes:
       - ./entrypoint-wrapper.sh:/usr/local/bin/ts-entrypoint.sh:ro
       - pixelfed-storage:/var/www/storage
@@ -151,19 +161,9 @@ services:
     command: ["gosu", "www-data", "php", "artisan", "schedule:work"]
     stop_signal: SIGTERM
     environment:
-      TZ: "UTC"
+      <<: *pixelfed-env
       DOCKER_SERVICE_NAME: "cron"
       ENTRYPOINT_SKIP_SCRIPTS: "any"
-      APP_DOMAIN: ${PIXELFED_DOMAIN}
-      APP_KEY: ${PIXELFED_APP_KEY}
-      DB_HOST: ${DB_MAGIC_NAME}.${TS_TAILNET}
-      DB_PORT: "5432"
-      DB_DATABASE: ${PIXELFED_DB_NAME}
-      DB_USERNAME: ${PIXELFED_DB_USER}
-      DB_PASSWORD: ${PIXELFED_DB_PASSWORD}
-      REDIS_HOST: ${REDIS_MAGIC_NAME}.${TS_TAILNET}
-      REDIS_PORT: "6379"
-      ENFORCE_EMAIL_VERIFICATION: ${PIXELFED_ENFORCE_EMAIL_VERIFICATION:-false}
     volumes:
       - ./entrypoint-wrapper.sh:/usr/local/bin/ts-entrypoint.sh:ro
       - pixelfed-storage:/var/www/storage
