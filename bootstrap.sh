@@ -180,6 +180,11 @@ cmd_provision_garage() {
   container=$(dc garage ps -q garage 2>/dev/null | head -1)
   [[ -n "$container" ]] || die "Garage is not running. Start it first: ./bootstrap.sh up garage"
 
+  # Confirm the container is actually running, not just Created/Exited.
+  local running
+  running=$(docker inspect "$container" --format='{{.State.Running}}' 2>/dev/null || echo "false")
+  [[ "$running" == "true" ]] || die "Garage container exists but is not running (state: $(docker inspect "$container" --format='{{.State.Status}}' 2>/dev/null)). Try: ./bootstrap.sh up garage"
+
   # Inline Garage CLI wrapper — all garage commands run inside the container.
   _g() { docker exec "$container" garage "$@"; }
 
@@ -197,18 +202,25 @@ cmd_provision_garage() {
 
   if [[ "$layout_version" == "0" ]]; then
     echo "[bootstrap] Initializing cluster layout (zone=${GARAGE_ZONE:-dc1}, capacity=${GARAGE_CAPACITY:-100G})..."
-    local node_id
-    node_id=$(_g node id 2>/dev/null | head -1 | cut -d@ -f1)
-    [[ -n "$node_id" ]] || die "Could not get Garage node ID. Check: ./bootstrap.sh logs garage garage"
+    # Run node id without stderr suppression so errors are visible.
+    local node_id_raw node_id
+    node_id_raw=$(_g node id || true)
+    node_id=$(echo "$node_id_raw" | head -1 | cut -d@ -f1)
+    if [[ -z "$node_id" ]]; then
+      echo "[bootstrap] 'garage node id' output: ${node_id_raw:-<empty>}" >&2
+      die "Could not get Garage node ID. Check: ./bootstrap.sh logs garage garage"
+    fi
     echo "[bootstrap] Assigning node ${node_id}..."
-    _g layout assign "$node_id" \
-      --zone     "${GARAGE_ZONE:-dc1}" \
-      --capacity "${GARAGE_CAPACITY:-100G}" \
-      --tag      "${GARAGE_MAGIC_NAME:-garage}" \
-      || die "garage layout assign failed — see output above"
+    if ! _g layout assign "$node_id" \
+        --zone     "${GARAGE_ZONE:-dc1}" \
+        --capacity "${GARAGE_CAPACITY:-100G}" \
+        --tag      "${GARAGE_MAGIC_NAME:-garage}"; then
+      die "garage layout assign failed — see output above"
+    fi
     echo "[bootstrap] Applying layout version 1..."
-    _g layout apply --version 1 \
-      || die "garage layout apply failed — see output above"
+    if ! _g layout apply --version 1; then
+      die "garage layout apply failed — see output above"
+    fi
     echo "[bootstrap] Layout applied (version 1)."
   else
     echo "[bootstrap] Layout already at version ${layout_version} — skipping."
