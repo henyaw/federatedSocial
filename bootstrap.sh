@@ -186,7 +186,8 @@ cmd_provision_garage() {
   [[ "$running" == "true" ]] || die "Garage container exists but is not running (state: $(docker inspect "$container" --format='{{.State.Status}}' 2>/dev/null)). Try: ./bootstrap.sh up garage"
 
   # Inline Garage CLI wrapper — all garage commands run inside the container.
-  _g() { docker exec "$container" garage "$@"; }
+  # The dxflrs/garage image places the binary at /garage (not on $PATH).
+  _g() { docker exec "$container" /garage "$@"; }
 
   echo "[bootstrap] Checking Garage cluster layout..."
 
