@@ -72,8 +72,12 @@ die() { echo "Error: $*" >&2; exit 1; }
 # "requested tags ... not permitted" error and print an ACL reminder.
 _check_ts_auth() {
   local stack="$1"
-  if dc "$stack" logs 2>/dev/null \
-      | grep -qi "requested tags.*invalid\|not permitted"; then
+  # Brief pause — Tailscale may crash immediately on a tag rejection and the
+  # log buffer may not be flushed to the daemon by the time we call `logs`.
+  sleep 2
+  local logs
+  logs=$(dc "$stack" logs 2>/dev/null || true)
+  if echo "$logs" | grep -qi "requested tags.*invalid\|not permitted"; then
     echo "" >&2
     echo "[bootstrap] Tailscale tag error: the tag(s) for '${stack}' are not in your ACL." >&2
     echo "[bootstrap]   1. Open acl.example.hujson and find the tag(s) for '${stack}'" >&2
@@ -81,6 +85,8 @@ _check_ts_auth() {
     echo "[bootstrap]      https://login.tailscale.com/admin/acls" >&2
     echo "[bootstrap]   3. Re-run: ./bootstrap.sh up ${stack}" >&2
     echo "" >&2
+  else
+    echo "[bootstrap] Start failed. Check logs: ./bootstrap.sh logs ${stack}" >&2
   fi
 }
 
