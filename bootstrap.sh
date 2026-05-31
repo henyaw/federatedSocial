@@ -186,9 +186,14 @@ cmd_provision_garage() {
   echo "[bootstrap] Checking Garage cluster layout..."
 
   local layout_version
+  # Garage v1.0.x prints: ==== CURRENT CLUSTER LAYOUT (version N) ====
+  # Extract the number from that line, case-insensitively.
   layout_version=$(_g layout show 2>/dev/null \
-    | grep -oE 'Current cluster layout version: [0-9]+' \
-    | grep -oE '[0-9]+$' || echo "0")
+    | grep -i "CURRENT CLUSTER LAYOUT" \
+    | grep -oE '[0-9]+' \
+    | head -1 || echo "0")
+  # Treat empty (no output / Garage not yet init'd) as 0.
+  [[ -n "$layout_version" ]] || layout_version="0"
 
   if [[ "$layout_version" == "0" ]]; then
     echo "[bootstrap] Initializing cluster layout (zone=${GARAGE_ZONE:-dc1}, capacity=${GARAGE_CAPACITY:-100G})..."
@@ -198,8 +203,10 @@ cmd_provision_garage() {
     _g layout assign "$node_id" \
       --zone     "${GARAGE_ZONE:-dc1}" \
       --capacity "${GARAGE_CAPACITY:-100G}" \
-      --tag      "${GARAGE_MAGIC_NAME}"
-    _g layout apply --version 1
+      --tag      "${GARAGE_MAGIC_NAME}" \
+      || die "garage layout assign failed. Check: ./bootstrap.sh logs garage garage"
+    _g layout apply --version 1 \
+      || die "garage layout apply failed. Check: ./bootstrap.sh logs garage garage"
     echo "[bootstrap] Layout applied (version 1)."
   else
     echo "[bootstrap] Layout already at version ${layout_version} — skipping."
