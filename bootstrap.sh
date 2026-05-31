@@ -68,6 +68,22 @@ dc() {
 
 die() { echo "Error: $*" >&2; exit 1; }
 
+# After a failed 'docker compose up', scan sidecar logs for the Tailscale
+# "requested tags ... not permitted" error and print an ACL reminder.
+_check_ts_auth() {
+  local stack="$1"
+  if dc "$stack" logs 2>/dev/null \
+      | grep -qi "requested tags.*invalid\|not permitted"; then
+    echo "" >&2
+    echo "[bootstrap] Tailscale tag error: the tag(s) for '${stack}' are not in your ACL." >&2
+    echo "[bootstrap]   1. Open acl.example.hujson and find the tag(s) for '${stack}'" >&2
+    echo "[bootstrap]   2. Add them to tagOwners in the Tailscale admin console:" >&2
+    echo "[bootstrap]      https://login.tailscale.com/admin/acls" >&2
+    echo "[bootstrap]   3. Re-run: ./bootstrap.sh up ${stack}" >&2
+    echo "" >&2
+  fi
+}
+
 require_stack() {
   local stack="$1"
   local valid=0
@@ -270,7 +286,10 @@ cmd_up() {
       die "GARAGE_RPC_SECRET is not set in .env. Generate one: openssl rand -hex 32"
 
     echo "[bootstrap] Starting Garage..."
-    dc garage up -d
+    if ! dc garage up -d; then
+      _check_ts_auth garage
+      exit 1
+    fi
 
     # Poll until the garage container is healthy. ts-garage has a 30 s
     # start_period; Garage itself has a 60 s start_period — budget 150 s.
@@ -298,7 +317,10 @@ cmd_up() {
   fi
 
   echo "[bootstrap] Starting ${stack}..."
-  dc "$stack" up -d
+  if ! dc "$stack" up -d; then
+    _check_ts_auth "$stack"
+    exit 1
+  fi
   echo "[bootstrap] ${stack} is up. Tip: ./bootstrap.sh logs ${stack}"
 }
 
