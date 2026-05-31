@@ -200,13 +200,15 @@ cmd_provision_garage() {
     local node_id
     node_id=$(_g node id 2>/dev/null | head -1 | cut -d@ -f1)
     [[ -n "$node_id" ]] || die "Could not get Garage node ID. Check: ./bootstrap.sh logs garage garage"
+    echo "[bootstrap] Assigning node ${node_id}..."
     _g layout assign "$node_id" \
       --zone     "${GARAGE_ZONE:-dc1}" \
       --capacity "${GARAGE_CAPACITY:-100G}" \
-      --tag      "${GARAGE_MAGIC_NAME}" \
-      || die "garage layout assign failed. Check: ./bootstrap.sh logs garage garage"
+      --tag      "${GARAGE_MAGIC_NAME:-garage}" \
+      || die "garage layout assign failed — see output above"
+    echo "[bootstrap] Applying layout version 1..."
     _g layout apply --version 1 \
-      || die "garage layout apply failed. Check: ./bootstrap.sh logs garage garage"
+      || die "garage layout apply failed — see output above"
     echo "[bootstrap] Layout applied (version 1)."
   else
     echo "[bootstrap] Layout already at version ${layout_version} — skipping."
