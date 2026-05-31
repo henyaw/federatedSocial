@@ -32,7 +32,7 @@ Your reverse proxy on the host receives public HTTPS traffic and forwards it to 
 `bootstrap.sh` is the front door for day-to-day operations. It reads your repo-root `.env`, wraps `docker compose` for each stack, and handles the fiddly bits (per-stack `.env` symlinks, idempotent database and storage provisioning, per-app admin-user creation).
 
 ```
-./bootstrap.sh up   <stack>               Bring up a stack (auto-provisions its DB)
+./bootstrap.sh up   <stack>               Bring up a stack (auto-provisions its DB if shared-db is local)
 ./bootstrap.sh down <stack>               Tear down a stack
 ./bootstrap.sh logs <stack> [service]     Tail logs
 ./bootstrap.sh ps   [stack]               Show container status
@@ -280,6 +280,8 @@ The `shared-db/initdb/00-create-app-dbs.sh` script only runs on a fresh `pg-data
 ```bash
 ./bootstrap.sh provision-db peertube   # or pixelfed, mastodon, etc.
 ```
+
+> **Multi-server note:** `provision-db` must be run from the host where shared-db is running — it uses `docker exec` into the Postgres container. On a multi-server setup, `bootstrap.sh up <app>` on the app host skips auto-provisioning (shared-db is not visible locally) and tells you so. Run `provision-db` on the shared-db host manually, then bring up the app.
 
 `./bootstrap.sh up <app>` also calls this automatically when shared-db is running, so the normal bring-up flow handles it end-to-end.
 
