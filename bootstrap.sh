@@ -266,8 +266,33 @@ cmd_up() {
   # After Garage comes up, auto-run provision-garage (idempotent).
   # Skipped if layout is already initialized — effectively a no-op on restarts.
   if [[ "$stack" == "garage" ]]; then
-    echo "[bootstrap] Waiting for Garage to be healthy before provisioning..."
-    dc garage up -d --wait 2>/dev/null || true
+    [[ -n "${GARAGE_RPC_SECRET:-}" ]] || \
+      die "GARAGE_RPC_SECRET is not set in .env. Generate one: openssl rand -hex 32"
+
+    echo "[bootstrap] Starting Garage..."
+    dc garage up -d
+
+    # Poll until the garage container is healthy. ts-garage has a 30 s
+    # start_period; Garage itself has a 60 s start_period — budget 150 s.
+    echo "[bootstrap] Waiting for Garage to be healthy (up to 150 s)..."
+    local elapsed=0 interval=5 timeout=150
+    while true; do
+      local container health
+      container=$(dc garage ps -q garage 2>/dev/null | head -1)
+      if [[ -n "$container" ]]; then
+        health=$(docker inspect "$container" \
+          --format='{{.State.Health.Status}}' 2>/dev/null || true)
+        [[ "$health" == "healthy" ]] && break
+      fi
+      elapsed=$(( elapsed + interval ))
+      if [[ $elapsed -ge $timeout ]]; then
+        die "Garage did not become healthy after ${timeout}s.
+  Check logs: ./bootstrap.sh logs garage
+  Ensure GARAGE_RPC_SECRET is set correctly in .env"
+      fi
+      sleep "$interval"
+    done
+
     cmd_provision_garage
     return 0
   fi
