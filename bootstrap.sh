@@ -238,14 +238,23 @@ cmd_provision_garage() {
   done
 
   echo "[bootstrap] Ensuring access key 'federated-social-apps'..."
-  local key_output
-  if key_output=$(_g key create federated-social-apps 2>&1); then
-    echo "[bootstrap] Key created."
-  elif echo "$key_output" | grep -qi "already\|exists"; then
-    echo "[bootstrap] Key exists."
-    key_output=$(_g key info federated-social-apps 2>/dev/null || true)
+  # Garage allows multiple keys with the same label, so 'key create' always
+  # succeeds and mints a new key. Check the key list first.
+  local key_id key_output
+  key_id=$(_g key list 2>/dev/null \
+    | awk '/federated-social-apps/ {print $1; exit}' || true)
+
+  if [[ -n "$key_id" ]]; then
+    echo "[bootstrap] Key exists (ID: ${key_id})."
+    echo "[bootstrap] Secret key is not redisplayable after creation."
+    echo "[bootstrap] If you have lost it, rotate it:"
+    echo "[bootstrap]   docker exec <garage-container> /garage key rotate ${key_id}"
+    echo "[bootstrap]   then re-run: ./bootstrap.sh provision-garage"
+    key_output=$(_g key info "$key_id" 2>/dev/null || true)
   else
-    die "Garage key error: ${key_output}"
+    key_output=$(_g key create federated-social-apps 2>&1) \
+      || die "Failed to create Garage access key: ${key_output}"
+    echo "[bootstrap] Key created."
   fi
 
   echo "[bootstrap] Granting key access to all buckets..."
@@ -253,13 +262,15 @@ cmd_provision_garage() {
     _g bucket allow "$bucket" --read --write --owner --key federated-social-apps 2>/dev/null || true
   done
 
-  local key_id secret_key
-  key_id=$(echo    "$key_output" | grep -i "Key ID"     | awk '{print $NF}')
+  local secret_key
+  # 'key create' output includes "Secret key: <value>"; 'key info' does not.
   secret_key=$(echo "$key_output" | grep -i "Secret key" | awk '{print $NF}')
+  # key_id was set above from 'key list' (existing) or parsed from create output.
+  [[ -n "$key_id" ]] || key_id=$(echo "$key_output" | grep -i "Key ID" | awk '{print $NF}')
 
   echo ""
   echo "[bootstrap] ============================================================"
-  if [[ -n "$key_id" && -n "$secret_key" ]]; then
+  if [[ -n "$secret_key" ]]; then
     echo "[bootstrap] Add these to your .env:"
     echo ""
     echo "  GARAGE_ACCESS_KEY_ID=${key_id}"
@@ -270,10 +281,10 @@ cmd_provision_garage() {
     echo "  PIXELFED_FS_DRIVER=s3"
     echo "  PEERTUBE_OBJECT_STORAGE_ENABLED=true"
   else
-    echo "[bootstrap] Key already existed — secret is not redisplayable."
-    echo "[bootstrap] To rotate: docker exec <container> garage key delete federated-social-apps"
-    echo "[bootstrap]   then re-run: ./bootstrap.sh provision-garage"
+    echo "[bootstrap] Key already existed — secret not redisplayable."
     [[ -n "$key_id" ]] && echo "  GARAGE_ACCESS_KEY_ID=${key_id}"
+    echo "[bootstrap] To rotate: /garage key rotate ${key_id:-<key-id>}"
+    echo "[bootstrap]   then re-run: ./bootstrap.sh provision-garage"
   fi
   echo "[bootstrap] ============================================================"
 }
