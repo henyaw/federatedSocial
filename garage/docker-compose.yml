@@ -63,12 +63,15 @@ services:
       - garage-meta:/var/lib/garage/meta
       - garage-data:/var/lib/garage/data
     healthcheck:
-      # GET /health returns 200 once Garage is ready to serve S3 requests.
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3900/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
+      # Use the garage binary itself — the dxflrs image may not include wget,
+      # and the S3 /health endpoint returns non-200 until the cluster is fully
+      # initialized. 'garage node id' queries the admin API (127.0.0.1:3903)
+      # and exits 0 as soon as the process is up and serving RPC.
+      test: ["CMD", "/garage", "node", "id"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
     depends_on:
       ts-garage:
         condition: service_healthy

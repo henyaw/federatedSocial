@@ -319,21 +319,22 @@ cmd_up() {
       exit 1
     fi
 
-    # Poll until the garage container is healthy. ts-garage has a 30 s
-    # start_period; Garage itself has a 60 s start_period — budget 150 s.
-    echo "[bootstrap] Waiting for Garage to be healthy (up to 150 s)..."
-    local elapsed=0 interval=5 timeout=150
+    # Poll until the Garage admin API responds (i.e. 'garage node id' exits 0).
+    # This matches the container healthcheck and is immune to Docker health
+    # state lag or healthcheck misconfiguration.
+    echo "[bootstrap] Waiting for Garage to be ready (up to 90 s)..."
+    local elapsed=0 interval=5 timeout=90
     while true; do
-      local container health
+      local container
       container=$(dc garage ps -q garage 2>/dev/null | head -1)
       if [[ -n "$container" ]]; then
-        health=$(docker inspect "$container" \
-          --format='{{.State.Health.Status}}' 2>/dev/null || true)
-        [[ "$health" == "healthy" ]] && break
+        if docker exec "$container" /garage node id >/dev/null 2>&1; then
+          break
+        fi
       fi
       elapsed=$(( elapsed + interval ))
       if [[ $elapsed -ge $timeout ]]; then
-        die "Garage did not become healthy after ${timeout}s.
+        die "Garage did not become ready after ${timeout}s.
   Check logs: ./bootstrap.sh logs garage
   Ensure GARAGE_RPC_SECRET is set correctly in .env"
       fi
