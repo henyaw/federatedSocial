@@ -262,6 +262,20 @@ cmd_provision_garage() {
     _g bucket allow "$bucket" --read --write --owner --key federated-social-apps 2>/dev/null || true
   done
 
+  # Enable anonymous (unauthenticated) reads on public media buckets.
+  # Without this, Garage returns 403 for any request that isn't signed with
+  # the app key — including requests from public browsers via the nginx/Caddy
+  # media proxy. pg-backups is intentionally excluded; it must stay private.
+  local public_buckets=(mastodon-media pixelfed-media peertube-web-videos peertube-streaming-playlists funkwhale-music)
+  echo "[bootstrap] Enabling anonymous read on public media buckets..."
+  for bucket in "${public_buckets[@]}"; do
+    if _g bucket allow "$bucket" --read --anonymous 2>/dev/null; then
+      echo "[bootstrap]   anonymous read enabled: ${bucket}"
+    else
+      echo "[bootstrap]   anonymous read already set or failed: ${bucket}"
+    fi
+  done
+
   local secret_key
   # 'key create' output includes "Secret key: <value>"; 'key info' does not.
   secret_key=$(echo "$key_output" | grep -i "Secret key" | awk '{print $NF}')
