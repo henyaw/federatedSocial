@@ -76,7 +76,7 @@ x-pixelfed-env: &pixelfed-env
   # of the local pixelfed-storage volume. Requires GARAGE_ACCESS_KEY_ID and
   # GARAGE_SECRET_ACCESS_KEY. AWS_USE_PATH_STYLE_ENDPOINT is required — Garage
   # uses path-style API (http://endpoint/bucket/key).
-  PF_ENABLED_CLOUD: ${PIXELFED_ENABLE_CLOUD:-false}
+  PF_ENABLE_CLOUD: ${PIXELFED_ENABLE_CLOUD:-false}
   FILESYSTEM_CLOUD: s3
   PF_LOCAL_AVATAR_TO_CLOUD: ${PIXELFED_LOCAL_AVATAR_TO_CLOUD:-false}
   MEDIA_DELETE_LOCAL_AFTER_CLOUD: ${PIXELFED_DELETE_LOCAL_AFTER_CLOUD:-false}
