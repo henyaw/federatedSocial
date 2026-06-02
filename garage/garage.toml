@@ -34,6 +34,28 @@ rpc_bind_addr = "0.0.0.0:3901"
 s3_region     = "garage"
 api_bind_addr = "0.0.0.0:3900"
 
+[s3_web]
+# Anonymous public serving of website-enabled buckets.
+#
+# The S3 API above (3900) requires every request to be signed and rejects
+# anonymous GETs with 403 — so public browsers cannot fetch media there.
+# This endpoint serves objects from buckets that have website serving enabled
+# (bootstrap.sh provision-garage runs `bucket website --allow` on the public
+# media buckets).
+#
+# Bucket selection is by Host header: a request whose Host is
+# "<bucket>.web.garage.local" is served from "<bucket>", and the URL path is
+# the object key directly (no bucket prefix). The host nginx/Caddy proxy
+# terminates public TLS and rewrites the Host header to that form — see
+# nginx/sites-available/garage-media.conf.
+#
+# Bound on all interfaces so the host proxy can reach it via MagicDNS over
+# the tailnet, consistent with the S3 API. root_domain is an internal-only
+# matching suffix, never a real public domain.
+bind_addr   = "[::]:3902"
+root_domain = ".web.garage.local"
+index       = "index.html"
+
 [admin]
 # Admin API bound to loopback only — reachable via `docker exec`, not over
 # the tailnet. bootstrap.sh provision-garage uses it this way.
