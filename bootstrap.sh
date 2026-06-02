@@ -262,17 +262,26 @@ cmd_provision_garage() {
     _g bucket allow "$bucket" --read --write --owner --key federated-social-apps 2>/dev/null || true
   done
 
-  # Enable anonymous (unauthenticated) reads on public media buckets.
-  # Without this, Garage returns 403 for any request that isn't signed with
-  # the app key — including requests from public browsers via the nginx/Caddy
-  # media proxy. pg-backups is intentionally excluded; it must stay private.
+  # Enable website serving on public media buckets.
+  #
+  # Garage's S3 API (port 3900) requires every request to be signed and
+  # returns 403 "does not support anonymous access" for unauthenticated GETs.
+  # Public browsers therefore cannot fetch media through the S3 API at all.
+  #
+  # The web endpoint (port 3902, configured in garage.toml [s3_web]) is the
+  # mechanism for anonymous public reads. A bucket must have website serving
+  # explicitly enabled to be reachable there. The host nginx/Caddy proxy
+  # terminates public TLS and forwards to this endpoint — see
+  # nginx/sites-available/garage-media.conf.
+  #
+  # pg-backups is intentionally excluded; it must stay private.
   local public_buckets=(mastodon-media pixelfed-media peertube-web-videos peertube-streaming-playlists funkwhale-music)
-  echo "[bootstrap] Enabling anonymous read on public media buckets..."
+  echo "[bootstrap] Enabling website serving on public media buckets..."
   for bucket in "${public_buckets[@]}"; do
-    if _g bucket allow "$bucket" --read --anonymous 2>/dev/null; then
-      echo "[bootstrap]   anonymous read enabled: ${bucket}"
+    if _g bucket website --allow "$bucket" 2>/dev/null; then
+      echo "[bootstrap]   website enabled: ${bucket}"
     else
-      echo "[bootstrap]   anonymous read already set or failed: ${bucket}"
+      echo "[bootstrap]   website already enabled or failed: ${bucket}"
     fi
   done
 
