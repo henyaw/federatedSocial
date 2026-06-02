@@ -278,7 +278,7 @@ cmd_provision_garage() {
     echo ""
     echo "[bootstrap] Then opt in apps via .env and restart their stacks:"
     echo "  MASTODON_S3_ENABLED=true"
-    echo "  PIXELFED_FS_DRIVER=s3"
+    echo "  PIXELFED_ENABLE_CLOUD=true"
     echo "  PEERTUBE_OBJECT_STORAGE_ENABLED=true"
   else
     echo "[bootstrap] Key already existed — secret not redisplayable."
@@ -323,6 +323,14 @@ cmd_up() {
   if [[ "$stack" == "garage" ]]; then
     [[ -n "${GARAGE_RPC_SECRET:-}" ]] || \
       die "GARAGE_RPC_SECRET is not set in .env. Generate one: openssl rand -hex 32"
+
+    # Generate garage.runtime.toml from the tracked template, substituting
+    # .env values for fields Garage can't read from environment variables.
+    # The runtime file is gitignored; the template stays clean for git pulls.
+    local region="${GARAGE_REGION:-garage}"
+    sed "s|^s3_region *=.*|s3_region     = \"${region}\"|" \
+        "${REPO_ROOT}/garage/garage.toml" > "${REPO_ROOT}/garage/garage.runtime.toml"
+    echo "[bootstrap] Generated garage.runtime.toml (s3_region=${region})."
 
     echo "[bootstrap] Starting Garage..."
     if ! dc garage up -d; then

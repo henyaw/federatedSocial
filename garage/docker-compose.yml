@@ -59,7 +59,7 @@ services:
       # All nodes in the same cluster must share this value.
       GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET}
     volumes:
-      - ./garage.toml:/etc/garage.toml:ro
+      - ./garage.runtime.toml:/etc/garage.toml:ro
       - garage-meta:/var/lib/garage/meta
       - garage-data:/var/lib/garage/data
     healthcheck:
