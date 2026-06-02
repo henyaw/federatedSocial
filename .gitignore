@@ -9,6 +9,10 @@ diaspora/.env
 funkwhale/.env
 bluesky/.env
 
+# Generated at runtime by bootstrap.sh — rebuilt on every 'up'.
+# Edit garage/garage.toml (the tracked template), not this file.
+garage/garage.runtime.toml
+
 # Editor backups
 *.swp
 *.swo
