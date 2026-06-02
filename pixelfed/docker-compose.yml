@@ -25,7 +25,39 @@ x-pixelfed-env: &pixelfed-env
   DB_PASSWORD: ${PIXELFED_DB_PASSWORD}
   REDIS_HOST: ${REDIS_MAGIC_NAME}.${TS_TAILNET}
   REDIS_PORT: "6379"
+  # ---- Instance identity ----
+  APP_NAME: ${PIXELFED_APP_NAME:-Pixelfed}
+  APP_TIMEZONE: ${PIXELFED_TIMEZONE:-UTC}
+  APP_LOCALE: ${PIXELFED_LOCALE:-en}
+  # Admin domain — leave blank to use APP_DOMAIN.
+  ADMIN_DOMAIN: ${PIXELFED_ADMIN_DOMAIN:-}
+  INSTANCE_DESCRIPTION: ${PIXELFED_INSTANCE_DESCRIPTION:-}
+  INSTANCE_CONTACT_EMAIL: ${PIXELFED_CONTACT_EMAIL:-}
+  INSTANCE_CONTACT_FORM: ${PIXELFED_CONTACT_FORM:-false}
+  # 100.64.0.0/10 covers all Tailscale CGNAT addresses (every sidecar hop).
+  TRUST_PROXIES: ${PIXELFED_TRUST_PROXIES:-100.64.0.0/10}
+  # ---- Registration ----
+  OPEN_REGISTRATION: ${PIXELFED_OPEN_REGISTRATION:-false}
   ENFORCE_EMAIL_VERIFICATION: ${PIXELFED_ENFORCE_EMAIL_VERIFICATION:-false}
+  # Registration cap — leave blank for unlimited.
+  INSTANCE_CUR_REG: ${PIXELFED_CUR_REG:-}
+  # ---- Federation ----
+  ACTIVITY_PUB: ${PIXELFED_ACTIVITY_PUB:-true}
+  AP_REMOTE_FOLLOW: ${PIXELFED_AP_REMOTE_FOLLOW:-true}
+  AP_SHARED_INBOX: ${PIXELFED_AP_SHARED_INBOX:-true}
+  AP_INBOX: ${PIXELFED_AP_INBOX:-true}
+  AP_OUTBOX: ${PIXELFED_AP_OUTBOX:-true}
+  AP_FALLBACK_LOCAL: ${PIXELFED_AP_FALLBACK_LOCAL:-false}
+  ATOM_FEEDS: ${PIXELFED_ATOM_FEEDS:-true}
+  NODE_INFO: ${PIXELFED_NODE_INFO:-true}
+  WEB_FINGER: ${PIXELFED_WEB_FINGER:-true}
+  # ---- Moderation ----
+  INSTANCE_REPORTS_EMAIL_ENABLED: ${PIXELFED_REPORTS_EMAIL_ENABLED:-false}
+  INSTANCE_REPORTS_EMAIL_ADDRESS: ${PIXELFED_REPORTS_EMAIL_ADDRESS:-}
+  INSTANCE_REPORTS_EMAIL_AUTOSPAM: ${PIXELFED_REPORTS_EMAIL_AUTOSPAM:-false}
+  # ---- Content ----
+  STORIES_ENABLED: ${PIXELFED_STORIES_ENABLED:-false}
+  PF_HIDE_NSFW_ON_PUBLIC_FEEDS: ${PIXELFED_HIDE_NSFW:-false}
   # ---- Email ----
   # Driver defaults to 'log' (mail written to the Laravel log, no relay).
   # Set PIXELFED_MAIL_DRIVER=smtp in .env once the shared SMTP_* relay is
@@ -40,11 +72,14 @@ x-pixelfed-env: &pixelfed-env
   MAIL_FROM_ADDRESS: ${PIXELFED_MAIL_FROM_ADDRESS:-noreply@${PIXELFED_DOMAIN}}
   MAIL_FROM_NAME: ${SMTP_FROM_NAME:-Pixelfed}
   # ---- Object storage (S3 via Garage) — opt in ----
-  # Set PIXELFED_FS_DRIVER=s3 in .env to store uploads in Garage instead of
-  # the local pixelfed-storage volume.
-  # AWS_USE_PATH_STYLE_ENDPOINT=true is required — Garage uses path-style API
-  # (http://endpoint/bucket/key), not virtual-hosted (http://bucket.endpoint/key).
-  FILESYSTEM_DRIVER: ${PIXELFED_FS_DRIVER:-local}
+  # Set PIXELFED_ENABLE_CLOUD=true in .env to store uploads in Garage instead
+  # of the local pixelfed-storage volume. Requires GARAGE_ACCESS_KEY_ID and
+  # GARAGE_SECRET_ACCESS_KEY. AWS_USE_PATH_STYLE_ENDPOINT is required — Garage
+  # uses path-style API (http://endpoint/bucket/key).
+  PF_ENABLED_CLOUD: ${PIXELFED_ENABLE_CLOUD:-false}
+  FILESYSTEM_CLOUD: s3
+  PF_LOCAL_AVATAR_TO_CLOUD: ${PIXELFED_LOCAL_AVATAR_TO_CLOUD:-false}
+  MEDIA_DELETE_LOCAL_AFTER_CLOUD: ${PIXELFED_DELETE_LOCAL_AFTER_CLOUD:-false}
   AWS_ACCESS_KEY_ID: ${GARAGE_ACCESS_KEY_ID:-}
   AWS_SECRET_ACCESS_KEY: ${GARAGE_SECRET_ACCESS_KEY:-}
   AWS_DEFAULT_REGION: ${GARAGE_REGION:-garage}
