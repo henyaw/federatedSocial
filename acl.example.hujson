@@ -185,6 +185,17 @@
       "ip":  ["tcp:3900"],
     },
 
+    // Host reverse proxy reaches Garage web endpoint (TCP/3902) to serve
+    // public media. Port 3902 is the [s3_web] endpoint in garage.toml —
+    // it serves anonymous reads from website-enabled buckets. Separate from
+    // the S3 API (3900) which requires signed requests and is not for
+    // public browsers.
+    {
+      "src": ["tag:reverse-proxy"],
+      "dst": ["tag:garage"],
+      "ip":  ["tcp:3902"],
+    },
+
     // Admins (you, on your laptop) reach everything for debugging.
     {
       "src": ["autogroup:admin"],
