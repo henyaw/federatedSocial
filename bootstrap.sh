@@ -228,7 +228,7 @@ cmd_provision_garage() {
   fi
 
   echo "[bootstrap] Ensuring buckets..."
-  local buckets=(pg-backups mastodon-media pixelfed-media peertube-web-videos peertube-streaming-playlists funkwhale-music)
+  local buckets=(pg-backups mastodon-media pixelfed-media gotosocial-media peertube-web-videos peertube-streaming-playlists funkwhale-music)
   for bucket in "${buckets[@]}"; do
     if _g bucket create "$bucket" 2>/dev/null; then
       echo "[bootstrap]   created: ${bucket}"
@@ -275,7 +275,7 @@ cmd_provision_garage() {
   # nginx/sites-available/garage-media.conf.
   #
   # pg-backups is intentionally excluded; it must stay private.
-  local public_buckets=(mastodon-media pixelfed-media peertube-web-videos peertube-streaming-playlists funkwhale-music)
+  local public_buckets=(mastodon-media pixelfed-media gotosocial-media peertube-web-videos peertube-streaming-playlists funkwhale-music)
   echo "[bootstrap] Enabling website serving on public media buckets..."
   for bucket in "${public_buckets[@]}"; do
     if _g bucket website --allow "$bucket" 2>/dev/null; then
