@@ -408,10 +408,18 @@ cmd_up() {
     echo "[bootstrap] Generated stalwart/config/config.runtime.json (host=${db_host}, db=${db_name}, user=${db_user})."
   fi
 
-  # Authelia preflight: fail fast on missing operator-created files rather than
-  # letting Docker create empty directories in their place (which silently breaks
-  # the container with confusing errors).
+  # Authelia preflight: generate runtime config and fail fast on missing
+  # operator-created files rather than letting Docker create empty directories
+  # in their place (which silently breaks the container with confusing errors).
   if [[ "$stack" == "authelia" ]]; then
+    # Generate configuration.runtime.yml from the tracked template.
+    # Pattern mirrors garage.runtime.toml and stalwart config.runtime.json.
+    local authelia_domain="${AUTHELIA_DOMAIN:-auth.example.com}"
+    sed "s|__AUTHELIA_DOMAIN__|${authelia_domain}|g" \
+      "${REPO_ROOT}/authelia/configuration.yml" \
+      > "${REPO_ROOT}/authelia/configuration.runtime.yml"
+    echo "[bootstrap] Generated authelia/configuration.runtime.yml (domain=${authelia_domain})."
+
     local pem="${REPO_ROOT}/authelia/private.pem"
     local users="${REPO_ROOT}/authelia/users.yml"
     if [[ ! -f "$pem" ]]; then

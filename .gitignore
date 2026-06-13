@@ -23,6 +23,10 @@ garage/garage.runtime.toml
 # Edit stalwart/config/config.json (the tracked template), not this file.
 stalwart/config/config.runtime.json
 
+# Generated at runtime by bootstrap.sh — rebuilt on every 'up authelia'.
+# Edit authelia/configuration.yml (the tracked template), not this file.
+authelia/configuration.runtime.yml
+
 # Operator-generated secrets — never commit.
 authelia/private.pem
 # Operator-managed user database with hashed passwords — gitignored so
