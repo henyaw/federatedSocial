@@ -314,6 +314,8 @@ docker compose up -d
 
 > **Multi-server note:** if Stalwart runs on a dedicated host separate from your L7 reverse proxy, the L4 edge runs on that host and connects to Stalwart via the loopback — no tailnet hops for SMTP traffic.
 
+> **nginx instead of Caddy?** If you'd rather not run a second Caddy and already operate nginx, `nginx/sites-available/stalwart-mail.conf` is a feature-for-feature `stream {}` translation (raw mail-port pass-through + PROXY protocol + `ssl_preread` SNI fan-out on `:443`). It is **untested** — the Caddy edge is the known-good path. The one functional difference: nginx emits PROXY protocol v1, Caddy v2; Stalwart auto-detects either.
+
 ### Add DNS records
 
 At minimum you'll need:
@@ -412,15 +414,58 @@ Each app lives in its own directory. To add one not already included:
 
 ### Backups
 
-Garage gives you a place to put backups that isn't the same disk as your data. The `pg-backups` bucket is created for exactly this. A minimal strategy:
+Garage gives you a place to put backups that isn't the same disk as your data. The `pg-backups` bucket is created for exactly this. The overall strategy:
 
-- **Database**: `pg_dumpall` (or per-database `pg_dump`) on a cron, shipped to the `pg-backups` bucket. This is the one piece worth automating — everything else can be rebuilt.
+- **Database**: `backup/pg-backup.sh` on a cron (see below). This is the one piece worth automating — everything else can be rebuilt.
 - **Media**: already in Garage if you've opted apps into S3 storage; replicate it to a second node or an external bucket for off-site safety.
 - **Redis**: no backup needed — every app in this stack treats it as a cache/queue, not a source of truth.
 - **`.env`**: the only thing that must live outside Garage. Keep a copy in a password manager or encrypted off-site store — it holds every secret, and recovery starts here.
 - **Tailscale ACL JSON**: export it from the admin console.
 
-A `pg_dump`-to-Garage cron is not yet templated in this repo; it's the obvious next addition. Set up *something* before you have data you'd miss losing.
+> **Untested:** `backup/pg-backup.sh` and `backup/pg-restore.sh` are templated but have not yet been exercised against a live stack. Do a manual run and confirm the object lands in the bucket (and a restore into a throwaway cluster) before relying on the cron.
+
+#### What the backup script does
+
+`backup/pg-backup.sh` runs `pg_dumpall` inside the shared-db Postgres container, gzips the stream, and uploads it straight to `s3://pg-backups/pg-<timestamp>.sql.gz` in Garage — no local temp file. It then prunes objects older than `PG_BACKUP_RETENTION_DAYS` (default 14). The upload uses a throwaway `amazon/aws-cli` container pointed at the Garage S3 endpoint over the tailnet, so there's nothing extra to install on the host.
+
+**Prerequisites:** run it on the host where `shared-db` lives (it uses `docker exec`), with Garage up, `provision-garage` already run, and `GARAGE_ACCESS_KEY_ID` / `GARAGE_SECRET_ACCESS_KEY` filled into `.env`. On a multi-server setup, that means the shared-db host — and it needs an ACL grant to reach `tag:garage:3900` (the admin-owned host already has this; a dedicated backup host needs a grant added to `acl.example.hujson`).
+
+#### Set it up (cron)
+
+Test a run by hand first:
+
+```bash
+./backup/pg-backup.sh
+```
+
+You should see it dump, upload, and report the key. Confirm the object exists:
+
+```bash
+./backup/pg-restore.sh --list      # lists what's in the pg-backups bucket
+```
+
+Then schedule it. Edit the operator's crontab (`crontab -e`) and add a nightly run at 03:00, with `MAILTO` so failures reach you (the script exits non-zero on any failure):
+
+```cron
+MAILTO=you@example.com
+0 3 * * * cd /path/to/federated-social && ./backup/pg-backup.sh >> /var/log/pg-backup.log 2>&1
+```
+
+Use an absolute path to the repo — cron runs with a minimal environment. The script sources the repo-root `.env` itself, so no extra env setup is needed in the crontab.
+
+#### Recover
+
+List available backups and restore one (defaults to the most recent if you don't name a key):
+
+```bash
+./backup/pg-restore.sh --list                       # see what's available
+./backup/pg-restore.sh                              # restore the latest
+./backup/pg-restore.sh pg-20260613-030000.sql.gz   # restore a specific one
+```
+
+`pg-restore.sh` streams the chosen dump from Garage, gunzips it, and pipes it into `psql -U postgres` inside the shared-db container. Because `pg_dumpall` captures roles **and** every database, this rebuilds the whole cluster.
+
+> **Destructive — read before running.** A `pg_dumpall` restore replays `CREATE ROLE` / `CREATE DATABASE` / `COPY` against the live cluster and can overwrite existing data and roles. The script makes you type `restore` to confirm. For a real disaster-recovery drill, restore into a throwaway Postgres first to validate the dump, rather than testing against production. Bring the affected app stacks down during a production restore so nothing is writing mid-replay.
 
 ## Troubleshooting
 
