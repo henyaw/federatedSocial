@@ -25,7 +25,7 @@ name: federated-authelia
 services:
 
   ts-authelia:
-    image: tailscale/tailscale:latest
+    image: tailscale/tailscale:${TAILSCALE_VERSION:-v1.98.4}
     hostname: ${AUTHELIA_MAGIC_NAME}
     environment:
       TS_AUTHKEY: ${TS_OAUTH_CLIENT_SECRET}?ephemeral=true
@@ -50,7 +50,7 @@ services:
     restart: unless-stopped
 
   authelia:
-    image: authelia/authelia:latest
+    image: authelia/authelia:${AUTHELIA_VERSION:-4.39.20}
     network_mode: "service:ts-authelia"
     environment:
       # Authelia maps AUTHELIA_<SECTION>_<KEY> onto config keys directly.

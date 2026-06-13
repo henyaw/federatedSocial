@@ -24,7 +24,7 @@ name: federated-diaspora
 services:
 
   ts-diaspora-web:
-    image: tailscale/tailscale:latest
+    image: tailscale/tailscale:${TAILSCALE_VERSION:-v1.98.4}
     hostname: ${DIASPORA_WEB_MAGIC_NAME}
     environment:
       TS_AUTHKEY: ${TS_OAUTH_CLIENT_SECRET}?ephemeral=true
@@ -50,7 +50,7 @@ services:
     restart: unless-stopped
 
   diaspora:
-    image: koehn/diaspora:latest
+    image: koehn/diaspora:${DIASPORA_VERSION:-0.9.1.0}
     network_mode: "service:ts-diaspora-web"
     environment:
       # Diaspora's settings reader maps these onto the YAML config tree

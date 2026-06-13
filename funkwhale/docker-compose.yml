@@ -59,7 +59,7 @@ services:
   # -------------------------------------------------------------------
 
   ts-funkwhale-web:
-    image: tailscale/tailscale:latest
+    image: tailscale/tailscale:${TAILSCALE_VERSION:-v1.98.4}
     hostname: ${FUNKWHALE_WEB_MAGIC_NAME}
     environment:
       TS_AUTHKEY: ${TS_OAUTH_CLIENT_SECRET}?ephemeral=true
@@ -150,7 +150,7 @@ services:
   # -------------------------------------------------------------------
 
   ts-funkwhale-worker:
-    image: tailscale/tailscale:latest
+    image: tailscale/tailscale:${TAILSCALE_VERSION:-v1.98.4}
     hostname: ${FUNKWHALE_WORKER_MAGIC_NAME}
     environment:
       TS_AUTHKEY: ${TS_OAUTH_CLIENT_SECRET}?ephemeral=true
