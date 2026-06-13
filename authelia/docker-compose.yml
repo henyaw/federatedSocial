@@ -89,7 +89,7 @@ services:
       # AUTHELIA_NOTIFIER_SMTP_PASSWORD: ${SMTP_PASSWORD}
       # AUTHELIA_NOTIFIER_SMTP_SENDER: ${AUTHELIA_MAIL_FROM}
     volumes:
-      - ./configuration.yml:/config/configuration.yml:ro
+      - ./configuration.runtime.yml:/config/configuration.yml:ro
       # users.yml is operator-managed and gitignored. Create it via:
       #   ./bootstrap.sh user-create authelia
       - ./users.yml:/config/users.yml:ro
