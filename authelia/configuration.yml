@@ -43,7 +43,8 @@ access_control:
   default_policy: deny
   rules:
     # Authelia portal itself must always be accessible.
-    # Replace auth.example.com with your AUTHELIA_DOMAIN value.
+    # EDIT: replace auth.example.com with your AUTHELIA_DOMAIN value.
+    # (same value as session.cookies[0].domain above)
     - domain: "auth.example.com"
       policy: bypass
 
@@ -57,11 +58,15 @@ access_control:
     #   policy: two_factor
 
 # Session cookie configuration.
-# session.domain is overridden by AUTHELIA_SESSION_DOMAIN env var in
-# docker-compose.yml — no need to edit this value here.
+# IMPORTANT: session.cookies CANNOT be set via environment variables in
+# Authelia v4.38+. You MUST edit domain and authelia_url here directly.
+# Replace both instances of "auth.example.com" with your AUTHELIA_DOMAIN.
+# Redis config is injected via AUTHELIA_SESSION_REDIS_* env vars in
+# docker-compose.yml.
 session:
-  domain: "auth.example.com"
-  # Redis config is injected via AUTHELIA_SESSION_REDIS_* env vars.
+  cookies:
+    - domain: "auth.example.com"          # EDIT: your AUTHELIA_DOMAIN
+      authelia_url: "https://auth.example.com"  # EDIT: your AUTHELIA_DOMAIN
 
 # Notifier — Authelia requires a notifier to send password reset and
 # 2FA emails. The filesystem notifier is the safe default: it writes

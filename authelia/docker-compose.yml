@@ -54,8 +54,8 @@ services:
     network_mode: "service:ts-authelia"
     environment:
       # Authelia maps AUTHELIA_<SECTION>_<KEY> onto config keys directly.
-      # Server
-      AUTHELIA_SERVER_PORT: "9091"
+      # Server — v4.38+ consolidated host+port into a single address string.
+      AUTHELIA_SERVER_ADDRESS: "tcp://0.0.0.0:9091"
       # Postgres storage backend
       AUTHELIA_STORAGE_POSTGRES_HOST: ${DB_MAGIC_NAME}.${TS_TAILNET}
       AUTHELIA_STORAGE_POSTGRES_PORT: "5432"
@@ -66,11 +66,12 @@ services:
       AUTHELIA_SESSION_REDIS_HOST: ${REDIS_MAGIC_NAME}.${TS_TAILNET}
       AUTHELIA_SESSION_REDIS_PORT: "6379"
       AUTHELIA_SESSION_REDIS_DATABASE_INDEX: ${AUTHELIA_REDIS_DB:-4}
-      # Session cookie domain — overrides the placeholder in configuration.yml.
-      # Authelia's YAML parser does NOT do shell variable expansion.
-      AUTHELIA_SESSION_DOMAIN: ${AUTHELIA_DOMAIN}
-      # Secrets — all required before first boot
-      AUTHELIA_JWT_SECRET: ${AUTHELIA_JWT_SECRET}
+      # Secrets — all required before first boot.
+      # NOTE: session.cookies domain is YAML-only (no env var equivalent in
+      # Authelia v4.38+). Edit configuration.yml directly — see the comment there.
+      #
+      # AUTHELIA_JWT_SECRET was renamed in v4.38 to the long form below.
+      AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET: ${AUTHELIA_JWT_SECRET}
       AUTHELIA_SESSION_SECRET: ${AUTHELIA_SESSION_SECRET}
       AUTHELIA_STORAGE_ENCRYPTION_KEY: ${AUTHELIA_STORAGE_ENCRYPTION_KEY}
       AUTHELIA_IDENTITY_PROVIDERS_OIDC_HMAC_SECRET: ${AUTHELIA_OIDC_HMAC_SECRET}
