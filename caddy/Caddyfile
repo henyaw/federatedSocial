@@ -132,6 +132,24 @@ peertube.example.com {
 }
 
 # ---------------------------------------------------------------------------
+# Lemmy
+# ---------------------------------------------------------------------------
+# Lemmy's stack runs an internal nginx (the `proxy` container) that fans out
+# to the backend (:8536), the SSR UI (:1234), and pict-rs (:8080) — all on
+# localhost inside the shared sidecar netns. That internal nginx listens on
+# :80, so the host proxy only needs to reach :80. WebSocket upgrades for live
+# updates are handled by Caddy automatically.
+#
+# max_size matches client_max_body_size in lemmy/nginx.conf and pict-rs's
+# default file size limit — raise all three together for larger uploads.
+lemmy.example.com {
+  request_body {
+    max_size 40MB
+  }
+  reverse_proxy lemmy.tailfe8c.ts.net:80
+}
+
+# ---------------------------------------------------------------------------
 # Authelia — SSO / OIDC login portal
 # ---------------------------------------------------------------------------
 # Authelia listens on :9091 inside its sidecar. All OIDC flows from GTS,
