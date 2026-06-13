@@ -144,7 +144,7 @@ GARAGE_ACCESS_KEY_ID=...
 GARAGE_SECRET_ACCESS_KEY=...
 ```
 
-Paste those into your `.env`. You can now opt any app into S3 storage by setting its flag (`MASTODON_S3_ENABLED=true`, `PIXELFED_FS_DRIVER=s3`, `PEERTUBE_OBJECT_STORAGE_ENABLED=true`) before bringing it up. See [Object storage](#object-storage-garage).
+Paste those into your `.env`. You can now opt any app into S3 storage by setting its flag (`MASTODON_S3_ENABLED=true`, `PIXELFED_ENABLE_CLOUD=true`, `PEERTUBE_OBJECT_STORAGE_ENABLED=true`) before bringing it up. See [Object storage](#object-storage-garage).
 
 ### 7. (Optional) Bring up Stalwart mail server
 
@@ -239,7 +239,7 @@ Reload your reverse proxy and visit your domain. You should see the app.
 | App | Enable with |
 |-----|-------------|
 | Mastodon | `MASTODON_S3_ENABLED=true` |
-| Pixelfed | `PIXELFED_FS_DRIVER=s3` |
+| Pixelfed | `PIXELFED_ENABLE_CLOUD=true` |
 | PeerTube | `PEERTUBE_OBJECT_STORAGE_ENABLED=true` |
 
 All three share the one `GARAGE_ACCESS_KEY_ID` / `GARAGE_SECRET_ACCESS_KEY` pair from `provision-garage`. Buckets are created for you (`mastodon-media`, `pixelfed-media`, `peertube-web-videos`, `peertube-streaming-playlists`, `funkwhale-music`, plus `pg-backups` for database dumps).
