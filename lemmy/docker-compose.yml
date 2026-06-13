@@ -85,7 +85,10 @@ services:
       # All containers share ts-lemmy-web's netns, so lemmy backend is on
       # localhost:8536. The external host is used for SSR metadata generation.
       LEMMY_UI_LEMMY_INTERNAL_HOST: "localhost:8536"
-      LEMMY_UI_LEMMY_EXTERNAL_HOST: "https://${LEMMY_DOMAIN}"
+      # External host is a BARE hostname (no scheme) — the scheme comes from
+      # LEMMY_UI_HTTPS. A "https://" prefix here produces malformed
+      # "https://https://..." URLs in server-rendered output.
+      LEMMY_UI_LEMMY_EXTERNAL_HOST: "${LEMMY_DOMAIN}"
       LEMMY_UI_HTTPS: "true"
     depends_on:
       ts-lemmy-web:
@@ -100,8 +103,11 @@ services:
     environment:
       PICTRS__SERVER__API_KEY: ${LEMMY_PICTRS_API_KEY}
     volumes:
-      - pictrs-data:/mnt/sled-repo
-      - pictrs-export:/mnt/export
+      # Single volume at /mnt — pict-rs keeps BOTH its sled metadata repo
+      # (/mnt/sled-repo) AND the actual image files (/mnt/files) under /mnt.
+      # Mounting only /mnt/sled-repo would orphan the image files on the
+      # container's ephemeral layer and lose every upload on recreate.
+      - pictrs-data:/mnt
     depends_on:
       ts-lemmy-web:
         condition: service_healthy
@@ -109,4 +115,3 @@ services:
 
 volumes:
   pictrs-data:
-  pictrs-export:
