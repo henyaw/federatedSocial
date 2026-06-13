@@ -15,7 +15,7 @@
 #   ./bootstrap.sh provision-garage              idempotent Garage bucket + key setup
 #   ./bootstrap.sh user-create <app> <username> <email>
 #
-# <stack>/<app>: shared-db | garage | pixelfed | mastodon | diaspora | funkwhale | gotosocial | peertube | stalwart | authelia
+# <stack>/<app>: shared-db | garage | pixelfed | mastodon | diaspora | funkwhale | gotosocial | peertube | stalwart | authelia | lemmy
 #
 # Bring-up order: shared-db → garage → app stacks.
 #
@@ -37,9 +37,9 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${REPO_ROOT}/.env"
-ALL_STACKS=(shared-db garage pixelfed mastodon diaspora funkwhale gotosocial peertube stalwart authelia)
+ALL_STACKS=(shared-db garage pixelfed mastodon diaspora funkwhale gotosocial peertube stalwart authelia lemmy)
 # Stacks that need a Postgres DB provisioned before starting.
-DB_STACKS=(pixelfed mastodon diaspora funkwhale gotosocial peertube stalwart authelia)
+DB_STACKS=(pixelfed mastodon diaspora funkwhale gotosocial peertube stalwart authelia lemmy)
 
 # Load .env — required before any command.
 if [[ -f "$ENV_FILE" ]]; then
@@ -174,8 +174,11 @@ cmd_provision_db() {
     authelia)
       _provision_role_db "${AUTHELIA_DB_USER:-authelia}" "${AUTHELIA_DB_PASSWORD}" "${AUTHELIA_DB_NAME:-authelia}"
       ;;
+    lemmy)
+      _provision_role_db "${LEMMY_DB_USER:-lemmy}" "${LEMMY_DB_PASSWORD}" "${LEMMY_DB_NAME:-lemmy}"
+      ;;
     *)
-      die "Unknown app '${app}'. Valid: pixelfed mastodon diaspora funkwhale gotosocial peertube stalwart authelia"
+      die "Unknown app '${app}'. Valid: pixelfed mastodon diaspora funkwhale gotosocial peertube stalwart authelia lemmy"
       ;;
   esac
   echo "[bootstrap] DB provisioning complete for ${app}."
@@ -408,6 +411,23 @@ cmd_up() {
     echo "[bootstrap] Generated stalwart/config/config.runtime.json (host=${db_host}, db=${db_name}, user=${db_user})."
   fi
 
+  # Generate lemmy/lemmy.runtime.hjson from the tracked template.
+  # Pattern mirrors garage.runtime.toml and stalwart config.runtime.json.
+  if [[ "$stack" == "lemmy" ]]; then
+    [[ -n "${LEMMY_DB_PASSWORD:-}" ]] || die "LEMMY_DB_PASSWORD is not set in .env"
+    [[ -n "${LEMMY_PICTRS_API_KEY:-}" ]] || die "LEMMY_PICTRS_API_KEY is not set in .env"
+    sed \
+      -e "s|__LEMMY_DOMAIN__|${LEMMY_DOMAIN:-lemmy.example.com}|g" \
+      -e "s|__DB_HOST__|${DB_MAGIC_NAME}.${TS_TAILNET}|g" \
+      -e "s|__LEMMY_DB_NAME__|${LEMMY_DB_NAME:-lemmy}|g" \
+      -e "s|__LEMMY_DB_USER__|${LEMMY_DB_USER:-lemmy}|g" \
+      -e "s|__LEMMY_DB_PASSWORD__|${LEMMY_DB_PASSWORD}|g" \
+      -e "s|__LEMMY_PICTRS_API_KEY__|${LEMMY_PICTRS_API_KEY}|g" \
+      "${REPO_ROOT}/lemmy/lemmy.hjson" \
+      > "${REPO_ROOT}/lemmy/lemmy.runtime.hjson"
+    echo "[bootstrap] Generated lemmy/lemmy.runtime.hjson (domain=${LEMMY_DOMAIN:-lemmy.example.com}, host=${DB_MAGIC_NAME}.${TS_TAILNET})."
+  fi
+
   # Authelia preflight: generate runtime config and fail fast on missing
   # operator-created files rather than letting Docker create empty directories
   # in their place (which silently breaks the container with confusing errors).
@@ -599,6 +619,12 @@ You can reset the root password instead:
         /gotosocial/gotosocial admin account promote --username "$username"
       ;;
 
+    lemmy)
+      echo "[bootstrap] Lemmy creates the admin account on first web visit."
+      echo "[bootstrap] Navigate to https://${LEMMY_DOMAIN:-lemmy.example.com} and follow the setup wizard."
+      echo "[bootstrap] (No CLI user-create — the web setup wizard is the only path.)"
+      ;;
+
     authelia)
       echo "[bootstrap] Authelia has no CLI user-create flow."
       echo "[bootstrap] Steps to add users:"
@@ -610,7 +636,7 @@ You can reset the root password instead:
       ;;
 
     *)
-      die "Unknown app '${app}'. Valid: mastodon pixelfed diaspora funkwhale gotosocial peertube authelia"
+      die "Unknown app '${app}'. Valid: mastodon pixelfed diaspora funkwhale gotosocial peertube authelia lemmy"
       ;;
 
   esac

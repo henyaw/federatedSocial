@@ -82,13 +82,12 @@
     // Authelia SSO / OIDC provider
     "tag:authelia":              ["autogroup:admin", "tag:authelia"],
 
+    // Lemmy — federated link aggregator
+    "tag:lemmy-web":             ["autogroup:admin", "tag:lemmy-web"],
+
     // Optional: tag your streaming/broadcast machines so they can publish
     // RTMP to PeerTube without going through a public ingest proxy.
     // "tag:streamer":          ["autogroup:admin", "tag:streamer"],
-
-    // Future stacks — uncomment when you bring them up. Remember to add
-    // the self-ownership entry in the same pattern.
-    // "tag:bluesky-pds":       ["autogroup:admin", "tag:bluesky-pds"],
   },
 
   "grants": [
@@ -104,7 +103,7 @@
         "tag:peertube-web",
         "tag:stalwart",
         "tag:authelia",
-        // "tag:bluesky-pds",
+        "tag:lemmy-web",
       ],
       "dst": ["tag:db-postgres"],
       "ip":  ["tcp:5432"],
@@ -113,6 +112,7 @@
     // App tiers reach shared Redis on TCP/6379 only.
     // GoToSocial is intentionally omitted — it has no Redis dependency.
     // Stalwart is intentionally omitted — it uses Garage not Redis.
+    // Lemmy is intentionally omitted — it uses Postgres only.
     {
       "src": [
         "tag:pixelfed-web", "tag:pixelfed-worker",
@@ -121,7 +121,6 @@
         "tag:funkwhale-web", "tag:funkwhale-worker",
         "tag:peertube-web",
         "tag:authelia",
-        // "tag:bluesky-pds",
       ],
       "dst": ["tag:db-redis"],
       "ip":  ["tcp:6379"],
@@ -204,7 +203,13 @@
     //   "dst": ["tag:peertube-web"],
     //   "ip":  ["tcp:1935"],
     // },
-    // "tag:bluesky-pds" reverse-proxy grant goes here when you add that stack.
+
+    // Lemmy — reverse proxy reaches the internal nginx aggregator on port 80.
+    {
+      "src": ["tag:reverse-proxy"],
+      "dst": ["tag:lemmy-web"],
+      "ip":  ["tcp:80"],
+    },
 
     // App tiers reach Garage S3 API on TCP/3900.
     // Add new app tags here when you bring them up.

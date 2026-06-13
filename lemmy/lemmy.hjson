@@ -1,0 +1,52 @@
+// Lemmy configuration template.
+//
+// DO NOT run Lemmy against this file directly — bootstrap.sh generates
+// lemmy.runtime.hjson from it (substituting __PLACEHOLDERS__) before
+// bringing up the stack. The runtime file is gitignored; this template
+// is what git tracks.
+//
+// Things you may legitimately edit here:
+//   - The email block (uncomment + fill in when SMTP is ready)
+//   - federation settings (allow_local_auth, registration, etc.)
+//   - database pool_size (raise for high-traffic instances)
+//
+// Values that come from .env are substituted by bootstrap.sh — do not
+// hardcode them here.
+{
+  // Public hostname. DO NOT change after first boot — it is baked into
+  // federation URIs and changing it breaks all existing accounts and posts.
+  hostname: "__LEMMY_DOMAIN__"
+  bind: "0.0.0.0"
+  port: 8536
+  tls_enabled: true
+
+  database: {
+    host: "__DB_HOST__"
+    port: 5432
+    user: "__LEMMY_DB_USER__"
+    password: "__LEMMY_DB_PASSWORD__"
+    database: "__LEMMY_DB_NAME__"
+    // Raise for high-traffic instances; each connection holds a Postgres slot.
+    pool_size: 5
+  }
+
+  // pict-rs image service (runs on localhost:8080 in the same netns).
+  // api_key must match LEMMY_PICTRS_API_KEY in .env.
+  pictrs: {
+    url: "http://localhost:8080/"
+    api_key: "__LEMMY_PICTRS_API_KEY__"
+  }
+
+  // Optional email notifications. Uncomment and fill in to enable password
+  // resets and reply notifications. smtp_server takes "host:port" form.
+  // Relay credentials (host, port, user, password) should match the shared
+  // SMTP_* block in .env. tls_type: none | starttls | tls
+  //
+  // email: {
+  //   smtp_server: "smtp.example.com:587"
+  //   smtp_login: ""
+  //   smtp_password: ""
+  //   smtp_from_address: "noreply@lemmy.example.com"
+  //   tls_type: "starttls"
+  // }
+}

@@ -13,7 +13,7 @@ gotosocial/.env
 peertube/.env
 stalwart/.env
 authelia/.env
-bluesky/.env
+lemmy/.env
 
 # Generated at runtime by bootstrap.sh — rebuilt on every 'up'.
 # Edit garage/garage.toml (the tracked template), not this file.
@@ -26,6 +26,10 @@ stalwart/config/config.runtime.json
 # Generated at runtime by bootstrap.sh — rebuilt on every 'up authelia'.
 # Edit authelia/configuration.yml (the tracked template), not this file.
 authelia/configuration.runtime.yml
+
+# Generated at runtime by bootstrap.sh — rebuilt on every 'up lemmy'.
+# Edit lemmy/lemmy.hjson (the tracked template), not this file.
+lemmy/lemmy.runtime.hjson
 
 # Operator-generated secrets — never commit.
 authelia/private.pem
