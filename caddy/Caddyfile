@@ -130,3 +130,35 @@ peertube.example.com {
     flush_interval -1
   }
 }
+
+# ---------------------------------------------------------------------------
+# Authelia — SSO / OIDC login portal
+# ---------------------------------------------------------------------------
+# Authelia listens on :9091 inside its sidecar. All OIDC flows from GTS,
+# Mastodon, Funkwhale, and PeerTube redirect the browser here for login.
+auth.example.com {
+  reverse_proxy authelia.tailfe8c.ts.net:9091
+}
+
+# ---------------------------------------------------------------------------
+# Stalwart — JMAP API and admin web panel
+# ---------------------------------------------------------------------------
+# Stalwart's JMAP/admin HTTP server listens on :8080 inside its sidecar.
+#
+# IMPORTANT — :443 collision: if this Caddy host is ALSO running the
+# Stalwart L4 edge (stalwart/caddy/), that process owns the public :443
+# listener for SNI fan-out (MTA-STS/autoconfig/autodiscover pass-through).
+# Caddy cannot bind :443 at the same time. Move this Caddy's HTTPS listener
+# off :443 by adding to the global options block above:
+#
+#     {
+#       email admin@example.com
+#       https_port 8443           # <-- add this
+#     }
+#
+# The L4 edge's catch-all SNI route forwards unmatched :443 traffic to
+# 127.0.0.1:8443, so these blocks continue to work on a shared host.
+# A dedicated reverse-proxy host (separate from the mailbox) needs no change.
+mail.example.com {
+  reverse_proxy stalwart.tailfe8c.ts.net:8080
+}
