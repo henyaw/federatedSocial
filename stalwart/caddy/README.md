@@ -25,10 +25,11 @@ avoiding the ~1GB-RAM local `xcaddy` build. The build fails loudly if
 
 ## Configuration
 
-`caddy.json` uses Caddy's native `{env.VAR}` substitution, so
-`STALWART_MAGIC_NAME`, `STALWART_DOMAIN`, and `TS_TAILNET` are read from
-the environment at startup — no hardcoded MagicDNS names. Set them in
-`docker-compose.yml` or your shell environment.
+`caddy.json` is a template containing `$STALWART_MAGIC_NAME`, `$STALWART_DOMAIN`,
+and `$TS_TAILNET` placeholders. The compose `command` runs `envsubst` on the
+template at startup and passes the result to Caddy — no hardcoded MagicDNS
+names in the committed file. Set the three variables in `docker-compose.yml`'s
+`environment` block (they read from the root `.env`).
 
 ## The :443 SNI fan-out
 

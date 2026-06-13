@@ -1,12 +1,18 @@
 # Operator's real configuration — never commit
 .env
 
-# Per-subdir .env symlinks (operator creates these to point at root .env)
+# Per-subdir .env symlinks (bootstrap.sh creates these automatically on 'up').
+# Gitignored so they are never accidentally committed.
 shared-db/.env
+garage/.env
 pixelfed/.env
 mastodon/.env
 diaspora/.env
 funkwhale/.env
+gotosocial/.env
+peertube/.env
+stalwart/.env
+authelia/.env
 bluesky/.env
 
 # Generated at runtime by bootstrap.sh — rebuilt on every 'up'.

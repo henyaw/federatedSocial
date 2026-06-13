@@ -43,7 +43,8 @@ access_control:
   default_policy: deny
   rules:
     # Authelia portal itself must always be accessible.
-    - domain: "${AUTHELIA_DOMAIN}"
+    # Replace auth.example.com with your AUTHELIA_DOMAIN value.
+    - domain: "auth.example.com"
       policy: bypass
 
     # ---- Add per-app rules below ----
@@ -55,10 +56,25 @@ access_control:
     # - domain: "mail.example.com"
     #   policy: two_factor
 
-# Session cookie configuration. Domain must match the public-facing domain.
+# Session cookie configuration.
+# session.domain is overridden by AUTHELIA_SESSION_DOMAIN env var in
+# docker-compose.yml — no need to edit this value here.
 session:
-  domain: "${AUTHELIA_DOMAIN}"
+  domain: "auth.example.com"
   # Redis config is injected via AUTHELIA_SESSION_REDIS_* env vars.
+
+# Notifier — Authelia requires a notifier to send password reset and
+# 2FA emails. The filesystem notifier is the safe default: it writes
+# notification content to a file inside the container (viewable via
+# `docker exec ... cat /tmp/authelia_notifications.txt`).
+#
+# To switch to SMTP: uncomment the AUTHELIA_NOTIFIER_SMTP_* vars in
+# docker-compose.yml. Authelia's env var override will replace this block.
+# Do NOT set those env vars when SMTP_HOST is blank — Authelia will refuse
+# to start with an empty SMTP host.
+notifier:
+  filesystem:
+    filename: /tmp/authelia_notifications.txt
 
 # OIDC identity provider — sign ID tokens with an RSA key.
 identity_providers:

@@ -17,13 +17,17 @@ services:
     build: .
     image: stalwart-caddy-l4:latest
     network_mode: host
-    command: ["caddy", "run", "--config", "/etc/caddy/caddy.json"]
+    # envsubst fills in $STALWART_MAGIC_NAME, $STALWART_DOMAIN, $TS_TAILNET in
+    # the caddy.json template, then caddy loads the result. This is simpler and
+    # more reliable than relying on Caddy's {env.VAR} placeholder support, which
+    # applies at connection time for dial addresses but not for SNI matchers.
+    command: ["sh", "-c", "envsubst < /etc/caddy/caddy.json.tmpl > /tmp/caddy.json && exec caddy run --config /tmp/caddy.json"]
     environment:
       STALWART_MAGIC_NAME: ${STALWART_MAGIC_NAME}
       STALWART_DOMAIN: ${STALWART_DOMAIN}
       TS_TAILNET: ${TS_TAILNET}
     volumes:
-      - ./caddy.json:/etc/caddy/caddy.json:ro
+      - ./caddy.json:/etc/caddy/caddy.json.tmpl:ro
       - caddy-data:/data
     restart: unless-stopped
 

@@ -3,8 +3,9 @@
   "//2": "Stalwart sidecar over the tailnet, preserving client IP via PROXY",
   "//3": "protocol v2. One server per port (upstream port differs per listener).",
   "//4": "Stalwart terminates TLS itself — this is pure pass-through.",
-  "//5": "Env vars: STALWART_MAGIC_NAME and TS_TAILNET are read by Caddy at",
-  "//6": "startup via {env.VAR} substitution. Set them in docker-compose.yml.",
+  "//5": "This file is a template. docker-compose.yml runs envsubst on it at",
+  "//6": "startup to produce /tmp/caddy.json with real values. Variables:",
+  "//7": "  $STALWART_MAGIC_NAME, $STALWART_DOMAIN, $TS_TAILNET",
   "apps": {
     "layer4": {
       "servers": {
@@ -13,7 +14,7 @@
           "routes": [{ "handle": [{
             "handler": "proxy",
             "proxy_protocol": "v2",
-            "upstreams": [{ "dial": ["{env.STALWART_MAGIC_NAME}.{env.TS_TAILNET}:25"] }]
+            "upstreams": [{ "dial": ["$STALWART_MAGIC_NAME.$TS_TAILNET:25"] }]
           }]}]
         },
         "submissions": {
@@ -21,7 +22,7 @@
           "routes": [{ "handle": [{
             "handler": "proxy",
             "proxy_protocol": "v2",
-            "upstreams": [{ "dial": ["{env.STALWART_MAGIC_NAME}.{env.TS_TAILNET}:465"] }]
+            "upstreams": [{ "dial": ["$STALWART_MAGIC_NAME.$TS_TAILNET:465"] }]
           }]}]
         },
         "submission": {
@@ -29,7 +30,7 @@
           "routes": [{ "handle": [{
             "handler": "proxy",
             "proxy_protocol": "v2",
-            "upstreams": [{ "dial": ["{env.STALWART_MAGIC_NAME}.{env.TS_TAILNET}:587"] }]
+            "upstreams": [{ "dial": ["$STALWART_MAGIC_NAME.$TS_TAILNET:587"] }]
           }]}]
         },
         "imap": {
@@ -37,7 +38,7 @@
           "routes": [{ "handle": [{
             "handler": "proxy",
             "proxy_protocol": "v2",
-            "upstreams": [{ "dial": ["{env.STALWART_MAGIC_NAME}.{env.TS_TAILNET}:143"] }]
+            "upstreams": [{ "dial": ["$STALWART_MAGIC_NAME.$TS_TAILNET:143"] }]
           }]}]
         },
         "imaptls": {
@@ -45,7 +46,7 @@
           "routes": [{ "handle": [{
             "handler": "proxy",
             "proxy_protocol": "v2",
-            "upstreams": [{ "dial": ["{env.STALWART_MAGIC_NAME}.{env.TS_TAILNET}:993"] }]
+            "upstreams": [{ "dial": ["$STALWART_MAGIC_NAME.$TS_TAILNET:993"] }]
           }]}]
         },
         "web": {
@@ -59,13 +60,13 @@
           "routes": [
             {
               "match": [{ "tls": { "sni": [
-                "mta-sts.{env.STALWART_DOMAIN}",
-                "autoconfig.{env.STALWART_DOMAIN}",
-                "autodiscover.{env.STALWART_DOMAIN}"
+                "mta-sts.$STALWART_DOMAIN",
+                "autoconfig.$STALWART_DOMAIN",
+                "autodiscover.$STALWART_DOMAIN"
               ] } }],
               "handle": [{
                 "handler": "proxy",
-                "upstreams": [{ "dial": ["{env.STALWART_MAGIC_NAME}.{env.TS_TAILNET}:443"] }]
+                "upstreams": [{ "dial": ["$STALWART_MAGIC_NAME.$TS_TAILNET:443"] }]
               }]
             },
             {
