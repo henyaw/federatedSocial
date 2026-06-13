@@ -66,6 +66,9 @@ services:
       AUTHELIA_SESSION_REDIS_HOST: ${REDIS_MAGIC_NAME}.${TS_TAILNET}
       AUTHELIA_SESSION_REDIS_PORT: "6379"
       AUTHELIA_SESSION_REDIS_DATABASE_INDEX: ${AUTHELIA_REDIS_DB:-4}
+      # Session cookie domain — overrides the placeholder in configuration.yml.
+      # Authelia's YAML parser does NOT do shell variable expansion.
+      AUTHELIA_SESSION_DOMAIN: ${AUTHELIA_DOMAIN}
       # Secrets — all required before first boot
       AUTHELIA_JWT_SECRET: ${AUTHELIA_JWT_SECRET}
       AUTHELIA_SESSION_SECRET: ${AUTHELIA_SESSION_SECRET}
@@ -73,12 +76,17 @@ services:
       AUTHELIA_IDENTITY_PROVIDERS_OIDC_HMAC_SECRET: ${AUTHELIA_OIDC_HMAC_SECRET}
       # OIDC JWKS key ID (matches the key configured in configuration.yml)
       AUTHELIA_IDENTITY_PROVIDERS_OIDC_JWKS_0_KEY_ID: main
-      # SMTP notifier (signup confirmations, password resets)
-      AUTHELIA_NOTIFIER_SMTP_HOST: ${SMTP_HOST}
-      AUTHELIA_NOTIFIER_SMTP_PORT: ${SMTP_PORT:-587}
-      AUTHELIA_NOTIFIER_SMTP_USERNAME: ${SMTP_USER}
-      AUTHELIA_NOTIFIER_SMTP_PASSWORD: ${SMTP_PASSWORD}
-      AUTHELIA_NOTIFIER_SMTP_SENDER: ${AUTHELIA_MAIL_FROM:-noreply@${AUTHELIA_DOMAIN}}
+      # SMTP notifier — ONLY uncomment these when SMTP_HOST is set in .env.
+      # With a blank SMTP_HOST, Authelia refuses to start. When these are
+      # commented out, configuration.yml's filesystem notifier is used instead
+      # (notifications written to /tmp/authelia_notifications.txt in the container).
+      # Compose cannot do nested variable defaults, so AUTHELIA_NOTIFIER_SMTP_SENDER
+      # must be set explicitly in .env as AUTHELIA_MAIL_FROM (not derived inline).
+      # AUTHELIA_NOTIFIER_SMTP_HOST: ${SMTP_HOST}
+      # AUTHELIA_NOTIFIER_SMTP_PORT: ${SMTP_PORT:-587}
+      # AUTHELIA_NOTIFIER_SMTP_USERNAME: ${SMTP_USER}
+      # AUTHELIA_NOTIFIER_SMTP_PASSWORD: ${SMTP_PASSWORD}
+      # AUTHELIA_NOTIFIER_SMTP_SENDER: ${AUTHELIA_MAIL_FROM}
     volumes:
       - ./configuration.yml:/config/configuration.yml:ro
       # users.yml is operator-managed and gitignored. Create it via:

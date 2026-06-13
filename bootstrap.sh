@@ -408,6 +408,24 @@ cmd_up() {
     echo "[bootstrap] Generated stalwart/config/config.runtime.json (host=${db_host}, db=${db_name}, user=${db_user})."
   fi
 
+  # Authelia preflight: fail fast on missing operator-created files rather than
+  # letting Docker create empty directories in their place (which silently breaks
+  # the container with confusing errors).
+  if [[ "$stack" == "authelia" ]]; then
+    local pem="${REPO_ROOT}/authelia/private.pem"
+    local users="${REPO_ROOT}/authelia/users.yml"
+    if [[ ! -f "$pem" ]]; then
+      die "authelia/private.pem not found.
+  Generate it once and keep it safe (it's gitignored):
+    openssl genrsa -out ${REPO_ROOT}/authelia/private.pem 4096"
+    fi
+    if [[ ! -f "$users" ]]; then
+      echo "[bootstrap] Warning: authelia/users.yml not found — creating empty placeholder."
+      echo "[bootstrap] Add users with: ./bootstrap.sh user-create authelia"
+      printf 'users: {}\n' > "$users"
+    fi
+  fi
+
   echo "[bootstrap] Starting ${stack}..."
   if ! dc "$stack" up -d; then
     _check_ts_auth "$stack"
