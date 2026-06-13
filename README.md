@@ -1,6 +1,6 @@
 # Federated Social Stack
 
-Self-host federated social services (Pixelfed, Mastodon, Diaspora, Funkwhale, GoToSocial, PeerTube, and more) on one server — or several, in different countries — with shared database and object-storage infrastructure and Tailscale-based networking. No firewall rules to write. No internal services exposed to the public internet. Edit one file, run one command per stack, done.
+Self-host federated social services — Pixelfed, Mastodon, Diaspora, Funkwhale, GoToSocial, PeerTube, Lemmy, and more — plus shared mail (Stalwart), single sign-on (Authelia), and object storage (Garage), on one server or spread across several in different countries. Tailscale-based networking means no firewall rules to write and no internal services exposed to the public internet. Edit one `.env` file, run one command per stack, done.
 
 ## What you get
 
@@ -9,6 +9,9 @@ Self-host federated social services (Pixelfed, Mastodon, Diaspora, Funkwhale, Go
 - **Tailscale-native networking**: internal services are only reachable over your private Tailscale network. They have no exposed ports on your server.
 - **Tag-based access control**: who can talk to what is defined in a single JSON file in the Tailscale admin console, not in iptables or firewall configs.
 - **A single operator script** (`bootstrap.sh`) that brings stacks up and down, provisions databases and storage, and creates admin users — so you don't have to learn each app's CLI.
+- **Stalwart mail server** (SMTP, IMAP, JMAP) on the tailnet. All configuration lives in Postgres; mail blobs in Garage. One mail stack shared by all your instances, with Let's Encrypt certificates via ACME and a web admin UI.
+- **Authelia SSO/OIDC** — single sign-on for GoToSocial, Mastodon, Funkwhale, and PeerTube. One set of credentials, one login portal at `auth.yourdomain.com`. OIDC clients are registered in `authelia/configuration.yml`.
+- **Lemmy** federated link aggregator and community discussion board, with full ActivityPub federation.
 - **Clean teardown**: tearing a stack down removes its services from your Tailscale admin console automatically. No ghost devices to clean up.
 - **One `.env` file** controls the whole stack. Hostnames, passwords, domains, SMTP, storage keys — all in one place.
 
@@ -41,9 +44,26 @@ Your reverse proxy on the host receives public HTTPS traffic and forwards it to 
 ./bootstrap.sh user-create <app> <user> <email>   Create an admin user
 ```
 
-Stacks: `shared-db`, `garage`, `pixelfed`, `mastodon`, `diaspora`, `funkwhale`, `gotosocial`, `peertube`.
+Stacks: `shared-db`, `garage`, `stalwart`, `authelia`, `pixelfed`, `mastodon`, `diaspora`, `funkwhale`, `gotosocial`, `peertube`, `lemmy`.
 
 You can still `cd` into a stack directory and run `docker compose` directly — `bootstrap.sh` doesn't hide anything, it just saves steps.
+
+## Utility stack: bring-up order
+
+Before any app stack, bring up infrastructure services in this order — each depends on the one before it:
+
+| # | Stack | Provides | Requires |
+|---|-------|----------|---------|
+| 1 | `shared-db` | Postgres + Redis for all apps | — |
+| 2 | `garage` | S3 object storage; required by Stalwart, optional for media apps | — |
+| 3 | `stalwart` | SMTP / IMAP / JMAP mail server | Postgres + Garage |
+| 4 | `authelia` | SSO / OIDC login portal | Postgres + Redis |
+
+App stacks (`pixelfed`, `mastodon`, `diaspora`, `funkwhale`, `gotosocial`, `peertube`, `lemmy`) only need Postgres and Redis, so they can come up any time after step 1. Steps 3 and 4 must follow step 2.
+
+Within each stack the sidecar healthcheck enforces ordering: the app container won't start until its sidecar is on the tailnet *and* `nc` confirms each backend is reachable. Across separate compose files, the order is yours to manage — the table above is the rule.
+
+> **Multi-server note:** `provision-db` and `provision-garage` use `docker exec` into locally-running containers and must be run on the host where `shared-db` or `garage` is running — not on a remote app host. When you run `./bootstrap.sh up <app>` on a remote host, it detects that shared-db is not local, skips auto-provisioning, and prints a reminder. Run the provision commands on the infrastructure host first, then bring up the app.
 
 ## Setup
 
@@ -111,7 +131,7 @@ The most common issue is a typo in the OAuth client secret or a missing tag in t
 
 ### 6. (Optional) Bring up Garage object storage
 
-If you want apps to store media in shared object storage instead of local volumes:
+If you want apps to store media in shared object storage instead of local volumes — or if you plan to run Stalwart (which stores mail blobs and its admin web UI assets in Garage):
 
 ```bash
 ./bootstrap.sh up garage
@@ -126,17 +146,51 @@ GARAGE_SECRET_ACCESS_KEY=...
 
 Paste those into your `.env`. You can now opt any app into S3 storage by setting its flag (`MASTODON_S3_ENABLED=true`, `PIXELFED_FS_DRIVER=s3`, `PEERTUBE_OBJECT_STORAGE_ENABLED=true`) before bringing it up. See [Object storage](#object-storage-garage).
 
-### 7. Bring up each app stack
+### 7. (Optional) Bring up Stalwart mail server
+
+Stalwart handles SMTP, IMAP, and JMAP for your instances. It stores its full configuration in Postgres and mail blobs in Garage — both must be up and provisioned before starting Stalwart.
+
+Fill in the Stalwart section of `.env` first (at minimum `STALWART_FALLBACK_ADMIN_SECRET`, the `STALWART_DB_*` credentials, and the Garage keys from step 6).
+
+```bash
+./bootstrap.sh up stalwart
+```
+
+This generates `stalwart/config/config.runtime.json` and starts the container. The sidecar healthcheck gates on Postgres (port 5432) *and* Garage (port 3900) before releasing Stalwart, so it waits rather than crash-loops if backends aren't ready yet.
+
+After the container is running, **finish setup in the admin UI before mail will flow** — see [Stalwart: first-boot configuration](#stalwart-first-boot-configuration).
+
+### 8. (Optional) Bring up Authelia SSO
+
+Authelia provides single sign-on for apps that support OIDC (GoToSocial, Mastodon, Funkwhale, PeerTube). It needs Postgres and Redis.
+
+**Generate the OIDC signing key before starting Authelia** — the container won't start without it:
+
+```bash
+openssl genrsa -out authelia/private.pem 4096
+```
+
+This file is gitignored. Keep it safe — losing it invalidates all active sessions.
+
+```bash
+./bootstrap.sh up authelia
+```
+
+`bootstrap.sh` generates `authelia/configuration.runtime.yml` from your `.env`, verifies `private.pem` exists, and creates an empty `authelia/users.yml` placeholder if none is present. See [Authelia: first-boot configuration](#authelia-first-boot-configuration) to add users and register OIDC clients.
+
+### 9. Bring up each app stack
 
 For each app you want to run:
 
 ```bash
-./bootstrap.sh up pixelfed   # or mastodon, funkwhale, gotosocial, peertube, diaspora
+./bootstrap.sh up pixelfed   # or mastodon, funkwhale, gotosocial, peertube, diaspora, lemmy
 ```
 
 `up` provisions the app's database automatically (idempotent — works on a fresh or long-running Postgres). Then check the admin console again — the app's web tier (and any workers, streaming services, etc.) should appear as Tailscale devices.
 
-### 8. Create your admin user
+**Lemmy**: has no admin CLI. The first visit to your Lemmy domain walks you through creating the admin account in the browser.
+
+### 10. Create your admin user
 
 **Configure SMTP first** (see [Email (SMTP)](#email-smtp)) — several apps have no password-reset CLI, so a working relay is your only recovery path if you forget the admin password.
 
@@ -146,7 +200,7 @@ For each app you want to run:
 
 Generated passwords are printed once — save them. (PeerTube and GoToSocial differ slightly; `user-create` explains each as you run it.)
 
-### 9. Configure your reverse proxy
+### 11. Configure your reverse proxy
 
 For each public-facing app, add a server block to your host reverse proxy.
 
@@ -170,7 +224,7 @@ server {
 }
 ```
 
-Either way, your host must be on the tailnet **and tagged `tag:reverse-proxy`** so the ACL lets it reach the app web tiers. The hostname `pixelfed.your-tailnet.ts.net` resolves because Tailscale is installed and running on the host; if it doesn't resolve, run `tailscale up` on the host and make sure MagicDNS is enabled in your admin console under **DNS**. (Each app listens on its own internal port — Pixelfed/Funkwhale on 80, Mastodon on 3000, GoToSocial on 8080, PeerTube on 9000; the reference configs have the right port per app.)
+Either way, your host must be on the tailnet **and tagged `tag:reverse-proxy`** so the ACL lets it reach the app web tiers. The hostname `pixelfed.your-tailnet.ts.net` resolves because Tailscale is installed and running on the host; if it doesn't resolve, run `tailscale up` on the host and make sure MagicDNS is enabled in your admin console under **DNS**. (Each app listens on its own internal port — Pixelfed/Funkwhale/Lemmy on 80, Mastodon on 3000, GoToSocial on 8080, PeerTube on 9000, Authelia on 9091, Stalwart admin/JMAP on 8080; the reference configs have the right port per app. Note: Stalwart's mail ports — SMTP 25/465/587 and IMAP 143/993 — are served by the L4 edge in `stalwart/caddy/`, not by this reverse proxy.)
 
 Reload your reverse proxy and visit your domain. You should see the app.
 
@@ -215,10 +269,111 @@ filling in the relay:
 - **Funkwhale**: takes a single connection string instead of discrete fields.
   Set `FUNKWHALE_EMAIL_CONFIG=smtp+tls://USER:PASSWORD@HOST:PORT`
   (URL-encode special characters in USER/PASSWORD).
+- **Lemmy**: the SMTP block in `lemmy/lemmy.hjson` is commented out by default. Uncomment it and fill in the relay details, then run `./bootstrap.sh up lemmy` — it regenerates `lemmy.runtime.hjson` and restarts the stack.
+- **Authelia**: SMTP is configured via env vars in `authelia/docker-compose.yml`. The notifier block is commented out to avoid startup failures when no relay is configured. Uncomment `AUTHELIA_NOTIFIER_SMTP_*` once you have a relay, then restart with `./bootstrap.sh up authelia`.
 
 Port 587 (STARTTLS) is the default throughout. For an implicit-TLS relay on
 port 465, set `SMTP_PORT=465` and flip the per-app TLS switch where one
 exists (e.g. `PEERTUBE_SMTP_TLS=true`, `PIXELFED_MAIL_ENCRYPTION=ssl`).
+
+## Stalwart: first-boot configuration
+
+After `./bootstrap.sh up stalwart` the container is running, but mail will not flow until you finish setup in the admin UI.
+
+### Log in
+
+Visit `https://mail.yourdomain.com` (your `STALWART_DOMAIN`) and log in with the fallback admin credentials:
+- **Username:** `admin`
+- **Password:** your `STALWART_FALLBACK_ADMIN_SECRET` from `.env`
+
+### Configure TLS (ACME)
+
+In **Server → TLS → ACME providers**, add a DNS-01 ACME provider. Stalwart handles its own certificate acquisition for mail ports — Caddy does not issue certs for SMTP/IMAP hostnames. DNS-01 is required because HTTP-01 cannot validate a mail hostname that must accept connections on non-HTTP ports.
+
+### Configure PROXY protocol
+
+The L4 edge (`stalwart/caddy/`) sends PROXY protocol v2 headers on mail ports so Stalwart sees real client IPs rather than the tailnet hop address. In **Server → Network**, enable PROXY protocol on each mail listener (SMTP, IMAP, LMTP) and set the trusted CIDR to `100.64.0.0/10` (Tailscale CGNAT). Do **not** enable PROXY on the JMAP/admin port (8080) — the L7 Caddy forwards that without PROXY headers.
+
+### Configure storage (S3 / Garage)
+
+In **Settings → Store**, add a blob store pointing at your Garage instance:
+- Endpoint: `http://<GARAGE_MAGIC_NAME>.<TS_TAILNET>:3900`
+- Access key / secret: your Garage keys from `.env`
+- Bucket: `stalwart-mail`
+
+### Deploy the L4 edge
+
+Public mail ports (25, 465, 587, 143, 993) are served by a Caddy L4 instance in `stalwart/caddy/`, separate from the L7 Caddy. Bring it up on your mail host:
+
+```bash
+cd stalwart/caddy
+docker compose up -d
+```
+
+> **`:443` collision**: if this host also runs your L7 Caddy reverse proxy, the L4 edge takes the public `:443` listener for MTA-STS/autoconfig/autodiscover SNI routing. Move L7 Caddy off `:443` by adding `https_port 8443` to its global options block — the L4 edge forwards unmatched `:443` traffic to `127.0.0.1:8443` automatically. See the comment block in `caddy/Caddyfile` for the exact change.
+
+> **Multi-server note:** if Stalwart runs on a dedicated host separate from your L7 reverse proxy, the L4 edge runs on that host and connects to Stalwart via the loopback — no tailnet hops for SMTP traffic.
+
+### Add DNS records
+
+At minimum you'll need:
+- `MX` record for your mail domain pointing to your Stalwart hostname
+- `A` / `AAAA` for the Stalwart hostname
+- `SPF` TXT record (`v=spf1 mx -all` as a starting point)
+- `DKIM` TXT record — generated in Stalwart's admin UI under **Authentication → DKIM** after TLS is configured
+- `DMARC` TXT record
+- `_mta-sts` and `_smtp._tls` TXT records (Stalwart auto-serves `/.well-known/mta-sts.txt` once TLS is up)
+
+---
+
+## Authelia: first-boot configuration
+
+After `openssl genrsa -out authelia/private.pem 4096` and `./bootstrap.sh up authelia`:
+
+### Create your first user
+
+```bash
+docker exec federated-authelia-authelia-1 \
+  authelia crypto hash generate argon2 --password 'your-password'
+```
+
+Copy the hash output. Create `authelia/users.yml`:
+
+```yaml
+users:
+  alice:
+    displayname: Alice
+    password: "$argon2id$v=19$m=65536,..."   # paste hash here
+    email: alice@yourdomain.com
+    groups: [admins]
+```
+
+Restart Authelia so it picks up the new user:
+
+```bash
+./bootstrap.sh down authelia && ./bootstrap.sh up authelia
+```
+
+### Register OIDC clients
+
+Edit `authelia/configuration.yml` and uncomment the client blocks for the apps you want to connect. Each client needs:
+- `client_id` — a stable identifier (e.g. `gotosocial`)
+- `client_secret` — generate with `openssl rand -hex 32`, then hash with `authelia crypto hash generate`
+- `redirect_uris` — the exact callback URL the app expects (documented in each app's OIDC setup guide)
+
+Run `./bootstrap.sh up authelia` after editing — it regenerates `configuration.runtime.yml` and restarts the container.
+
+### Point apps at Authelia
+
+OIDC discovery endpoint: `https://auth.yourdomain.com/.well-known/openid-configuration`
+
+Each app has its own OIDC configuration location:
+- **GoToSocial**: `GTS_OIDC_*` env vars in `.env`, then restart the stack
+- **Mastodon**: **Admin → Settings** in the Mastodon web UI (or `OIDC_ENABLED=true` in `.env`)
+- **Funkwhale**: `SOCIAL_AUTH_*` env vars
+- **PeerTube**: **Admin → Configuration → Login** in the PeerTube web UI
+
+---
 
 ## Day-to-day operation
 
