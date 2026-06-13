@@ -38,7 +38,7 @@ services:
       - NET_ADMIN
       - NET_RAW
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9002/healthz"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9002/healthz"]
       interval: 10s
       timeout: 5s
       retries: 6
@@ -110,7 +110,7 @@ services:
       - NET_ADMIN
       - NET_RAW
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9002/healthz"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9002/healthz"]
       interval: 10s
       timeout: 5s
       retries: 6

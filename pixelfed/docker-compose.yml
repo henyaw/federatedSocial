@@ -115,9 +115,9 @@ services:
       - NET_ADMIN
       - NET_RAW
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9002/healthz"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9002/healthz && nc -z -w3 ${DB_MAGIC_NAME}.${TS_TAILNET} 5432 && nc -z -w3 ${REDIS_MAGIC_NAME}.${TS_TAILNET} 6379"]
       interval: 10s
-      timeout: 5s
+      timeout: 15s
       retries: 6
       start_period: 30s
     restart: unless-stopped
@@ -168,9 +168,9 @@ services:
       - NET_ADMIN
       - NET_RAW
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9002/healthz"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9002/healthz && nc -z -w3 ${DB_MAGIC_NAME}.${TS_TAILNET} 5432 && nc -z -w3 ${REDIS_MAGIC_NAME}.${TS_TAILNET} 6379"]
       interval: 10s
-      timeout: 5s
+      timeout: 15s
       retries: 6
       start_period: 30s
     restart: unless-stopped
