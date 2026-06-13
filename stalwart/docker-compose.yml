@@ -58,7 +58,7 @@ services:
   stalwart:
     # Tested against v0.16.7. Pin a specific tag in production — Stalwart has
     # had breaking config changes between minor versions.
-    image: stalwartlabs/stalwart:${STALWART_VERSION:-v0.16.8}
+    image: stalwartlabs/stalwart:${STALWART_VERSION:-v0.16.7}
     network_mode: "service:ts-stalwart"
     environment:
       # Bootstrap config: only STALWART_DB_PASSWORD is read from environment by
