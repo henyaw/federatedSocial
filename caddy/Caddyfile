@@ -140,11 +140,12 @@ peertube.example.com {
 # :80, so the host proxy only needs to reach :80. WebSocket upgrades for live
 # updates are handled by Caddy automatically.
 #
-# max_size matches client_max_body_size in lemmy/nginx.conf and pict-rs's
-# default file size limit — raise all three together for larger uploads.
+# max_size matches client_max_body_size in lemmy/nginx.conf (the upstream
+# Lemmy nginx default) — raise both together, plus pict-rs's
+# PICTRS__MEDIA__MAX_FILE_SIZE, for larger uploads.
 lemmy.example.com {
   request_body {
-    max_size 40MB
+    max_size 20MB
   }
   reverse_proxy lemmy.tailfe8c.ts.net:80
 }
