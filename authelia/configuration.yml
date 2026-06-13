@@ -1,0 +1,135 @@
+---
+# Authelia configuration — settings that cannot be expressed as environment
+# variables. Most runtime settings (database, Redis, SMTP, secrets) are
+# injected via AUTHELIA_* env vars in docker-compose.yml. This file handles:
+#   - Authentication backend (file-based users.yml)
+#   - OIDC JWKS key path
+#   - Access control rules (default deny + per-resource exceptions)
+#   - OIDC client registrations (one per app that uses SSO)
+#
+# DO NOT put secrets here — use environment variables (see docker-compose.yml).
+
+# Log level. Change to debug when diagnosing OIDC issues.
+log:
+  level: info
+
+# File-based user database. This file is operator-managed and gitignored.
+# To add a user, generate a password hash and edit users.yml directly:
+#
+#   docker exec federated-authelia-authelia-1 \
+#     authelia crypto hash generate argon2 --password 'yourpassword'
+#
+# Then add to users.yml:
+#   users:
+#     alice:
+#       displayname: Alice
+#       password: "$argon2id$..."  (the hash output above)
+#       email: alice@example.com
+#       groups: [admins, users]
+authentication_backend:
+  file:
+    path: /config/users.yml
+    password:
+      algorithm: argon2id
+      iterations: 3
+      memory: 65536
+      parallelism: 4
+      key_length: 32
+      salt_length: 16
+
+# Access control — default deny, then allow by app and group.
+# Add rules here as you bring up OIDC-integrated apps.
+access_control:
+  default_policy: deny
+  rules:
+    # Authelia portal itself must always be accessible.
+    - domain: "${AUTHELIA_DOMAIN}"
+      policy: bypass
+
+    # ---- Add per-app rules below ----
+    # Example: require login for all GoToSocial paths
+    # - domain: "gotosocial.example.com"
+    #   policy: one_factor
+
+    # Example: require two-factor for the Stalwart admin panel
+    # - domain: "mail.example.com"
+    #   policy: two_factor
+
+# Session cookie configuration. Domain must match the public-facing domain.
+session:
+  domain: "${AUTHELIA_DOMAIN}"
+  # Redis config is injected via AUTHELIA_SESSION_REDIS_* env vars.
+
+# OIDC identity provider — sign ID tokens with an RSA key.
+identity_providers:
+  oidc:
+    jwks:
+      - key_id: main
+        algorithm: RS256
+        # Operator-generated private key, gitignored.
+        # Generate: openssl genrsa -out authelia/private.pem 4096
+        key:
+          path: /config/private.pem
+
+    # ---- OIDC clients ----
+    # Register one client per app that integrates with Authelia.
+    # client_id and client_secret are arbitrary strings; keep secrets long and
+    # random. Redirect URIs must exactly match what the app sends in its auth
+    # request — check the app's OIDC documentation for the correct path.
+    #
+    # clients:
+
+    # --- GoToSocial ---
+    # GTS reads OIDC config from its admin settings UI, not from env vars.
+    # After registering the client here, configure the same client_id and
+    # client_secret in the GTS admin panel under "OIDC".
+    # - client_id: gotosocial
+    #   client_name: GoToSocial
+    #   client_secret: "$pbkdf2-sha512$..."  # hash with: authelia crypto hash generate pbkdf2 --password 'secret'
+    #   public: false
+    #   authorization_policy: one_factor
+    #   redirect_uris:
+    #     - https://gotosocial.example.com/auth/callback
+    #   scopes: [openid, profile, email, groups]
+    #   response_types: [code]
+
+    # --- Mastodon ---
+    # Mastodon does not natively support OIDC; use an OIDC proxy adapter
+    # (e.g. omniauth-openid-connect) or a forward-auth middleware instead.
+    # See https://docs.authelia.com/integration/proxies/nginx for forward-auth.
+    # - client_id: mastodon
+    #   client_name: Mastodon
+    #   client_secret: "$pbkdf2-sha512$..."
+    #   public: false
+    #   authorization_policy: one_factor
+    #   redirect_uris:
+    #     - https://mastodon.example.com/auth/auth/openid_connect/callback
+    #   scopes: [openid, profile, email]
+    #   response_types: [code]
+
+    # --- Funkwhale ---
+    # Funkwhale supports OIDC via django-allauth. Configure the provider in
+    # the Funkwhale admin UI (Social Applications) after registering here.
+    # - client_id: funkwhale
+    #   client_name: Funkwhale
+    #   client_secret: "$pbkdf2-sha512$..."
+    #   public: false
+    #   authorization_policy: one_factor
+    #   redirect_uris:
+    #     - https://funkwhale.example.com/api/v1/oauth/complete/funkwhale-oidc/
+    #   scopes: [openid, profile, email]
+    #   response_types: [code]
+
+    # --- PeerTube ---
+    # PeerTube supports OIDC via its built-in plugin system.
+    # Install peertube-plugin-auth-openid-connect and configure the plugin
+    # in the PeerTube admin UI with the client ID/secret from below.
+    # - client_id: peertube
+    #   client_name: PeerTube
+    #   client_secret: "$pbkdf2-sha512$..."
+    #   public: false
+    #   authorization_policy: one_factor
+    #   redirect_uris:
+    #     - https://peertube.example.com/plugins/auth-openid-connect/router/code-cb
+    #   scopes: [openid, profile, email]
+    #   response_types: [code]
