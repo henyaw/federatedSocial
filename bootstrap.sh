@@ -321,9 +321,44 @@ cmd_provision_garage() {
   echo "[bootstrap] ============================================================"
 }
 
+_cmd_up_caddy() {
+  local caddy_bin="${CADDY_BIN:-/usr/local/bin/caddy}"
+  local caddyfile="${REPO_ROOT}/caddy/Caddyfile"
+
+  # 1. Verify the custom binary exists and includes the layer4 module.
+  if [[ ! -x "$caddy_bin" ]]; then
+    die "Custom Caddy binary not found at ${caddy_bin}.
+  Download it with the caddy-l4 plugin from caddyserver.com/api/download
+  See caddy/README.md for the exact command."
+  fi
+  if ! "$caddy_bin" list-modules 2>/dev/null | grep -q 'layer4'; then
+    die "Caddy at ${caddy_bin} lacks the caddy-l4 module.
+  See caddy/README.md for the download command with required plugins."
+  fi
+  echo "[bootstrap] Caddy binary OK (layer4 module present)."
+
+  # 2. Validate the Caddyfile before touching the live system config.
+  if ! "$caddy_bin" validate --config "$caddyfile" --adapter caddyfile; then
+    die "Caddyfile validation failed. Fix ${caddyfile} before deploying."
+  fi
+  echo "[bootstrap] Caddyfile valid."
+
+  # 3. Deploy and reload.
+  sudo cp "$caddyfile" /etc/caddy/Caddyfile
+  sudo systemctl reload caddy
+  echo "[bootstrap] Caddy reloaded. Check: sudo journalctl -u caddy -n 50"
+}
+
 cmd_up() {
   local stack="${1:-}"
   [[ -n "$stack" ]] || die "Usage: ./bootstrap.sh up <stack>"
+
+  # caddy is a system service, not a Docker Compose stack — handle separately.
+  if [[ "$stack" == "caddy" ]]; then
+    _cmd_up_caddy
+    return 0
+  fi
+
   require_stack "$stack"
 
   # Ensure a per-stack .env symlink exists so operators can also run

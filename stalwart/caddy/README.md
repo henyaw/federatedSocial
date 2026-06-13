@@ -1,4 +1,11 @@
-# stalwart/caddy — layer-4 mail proxy
+# stalwart/caddy — layer-4 mail proxy (standalone edge host)
+
+> **Which path should I use?**
+> - **Same host as reverse proxy** (most common): your system Caddy already owns
+>   the ports. Add the `layer4 {}` block to your Caddyfile instead. See
+>   [`caddy/README.md`](../../caddy/README.md) for the system-integrated approach.
+> - **Dedicated edge box** (separate machine, no existing system Caddy): use this
+>   Docker stack. It runs its own Caddy instance with `network_mode: host`.
 
 A Caddy build with `caddy-l4` that pipes the public mail ports to the Stalwart
 sidecar over the tailnet. Pure TCP pass-through with PROXY protocol v2 —
