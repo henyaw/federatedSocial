@@ -76,6 +76,12 @@
     // Garage — shared S3-compatible object storage
     "tag:garage":                ["autogroup:admin", "tag:garage"],
 
+    // Stalwart mail server (SMTP, IMAP, JMAP/admin)
+    "tag:stalwart":              ["autogroup:admin", "tag:stalwart"],
+
+    // Authelia SSO / OIDC provider
+    "tag:authelia":              ["autogroup:admin", "tag:authelia"],
+
     // Optional: tag your streaming/broadcast machines so they can publish
     // RTMP to PeerTube without going through a public ingest proxy.
     // "tag:streamer":          ["autogroup:admin", "tag:streamer"],
@@ -96,6 +102,8 @@
         "tag:funkwhale-web", "tag:funkwhale-worker",
         "tag:gotosocial-web",
         "tag:peertube-web",
+        "tag:stalwart",
+        "tag:authelia",
         // "tag:bluesky-pds",
       ],
       "dst": ["tag:db-postgres"],
@@ -104,6 +112,7 @@
 
     // App tiers reach shared Redis on TCP/6379 only.
     // GoToSocial is intentionally omitted — it has no Redis dependency.
+    // Stalwart is intentionally omitted — it uses Garage not Redis.
     {
       "src": [
         "tag:pixelfed-web", "tag:pixelfed-worker",
@@ -111,10 +120,38 @@
         "tag:diaspora-web",
         "tag:funkwhale-web", "tag:funkwhale-worker",
         "tag:peertube-web",
+        "tag:authelia",
         // "tag:bluesky-pds",
       ],
       "dst": ["tag:db-redis"],
       "ip":  ["tcp:6379"],
+    },
+
+    // Stalwart mail server — reached by the L4 edge on all mail ports plus
+    // HTTPS for MTA-STS/autoconfig/autodiscover pass-through, and by the
+    // reverse proxy on JMAP/admin port 8080.
+    {
+      "src": ["tag:reverse-proxy"],
+      "dst": ["tag:stalwart"],
+      "ip":  ["tcp:25", "tcp:465", "tcp:587", "tcp:143", "tcp:993", "tcp:443", "tcp:8080"],
+    },
+
+    // Authelia SSO portal — reached by the reverse proxy on TCP/9091, and by
+    // app tiers that use OIDC (GTS, Mastodon, Funkwhale, PeerTube).
+    {
+      "src": ["tag:reverse-proxy"],
+      "dst": ["tag:authelia"],
+      "ip":  ["tcp:9091"],
+    },
+    {
+      "src": [
+        "tag:gotosocial-web",
+        "tag:mastodon-web",
+        "tag:funkwhale-web",
+        "tag:peertube-web",
+      ],
+      "dst": ["tag:authelia"],
+      "ip":  ["tcp:9091"],
     },
 
     // Host reverse proxy reaches each public-facing app web tier on the
@@ -179,6 +216,7 @@
         "tag:funkwhale-web", "tag:funkwhale-worker",
         "tag:gotosocial-web",
         "tag:peertube-web",
+        "tag:stalwart",
         "tag:db-postgres",  // shared-db pg-backup service uses Garage too
       ],
       "dst": ["tag:garage"],

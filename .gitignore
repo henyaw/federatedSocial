@@ -13,6 +13,16 @@ bluesky/.env
 # Edit garage/garage.toml (the tracked template), not this file.
 garage/garage.runtime.toml
 
+# Generated at runtime by bootstrap.sh — rebuilt on every 'up stalwart'.
+# Edit stalwart/config/config.json (the tracked template), not this file.
+stalwart/config/config.runtime.json
+
+# Operator-generated secrets — never commit.
+authelia/private.pem
+# Operator-managed user database with hashed passwords — gitignored so
+# 'git pull' never overwrites a live user list.
+authelia/users.yml
+
 # Editor backups
 *.swp
 *.swo

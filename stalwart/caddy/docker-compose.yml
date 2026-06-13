@@ -1,0 +1,31 @@
+# Stalwart L4 edge — layer-4 mail proxy.
+#
+# Deploy this on any host with a public IP that is joined to the tailnet and
+# tagged tag:reverse-proxy. It does NOT need to share a host with the
+# Stalwart mailbox container — that is the point.
+#
+#   docker compose up -d --build
+#
+# network_mode: host is deliberate: the proxy needs to bind the public mail
+# ports AND resolve ${STALWART_MAGIC_NAME}.${TS_TAILNET} via the host's
+# tailscaled (MagicDNS). The mailbox container binds nothing on the host.
+
+name: stalwart-edge
+
+services:
+  caddy-l4:
+    build: .
+    image: stalwart-caddy-l4:latest
+    network_mode: host
+    command: ["caddy", "run", "--config", "/etc/caddy/caddy.json"]
+    environment:
+      STALWART_MAGIC_NAME: ${STALWART_MAGIC_NAME}
+      STALWART_DOMAIN: ${STALWART_DOMAIN}
+      TS_TAILNET: ${TS_TAILNET}
+    volumes:
+      - ./caddy.json:/etc/caddy/caddy.json:ro
+      - caddy-data:/data
+    restart: unless-stopped
+
+volumes:
+  caddy-data:

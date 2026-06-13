@@ -15,7 +15,7 @@
 #   ./bootstrap.sh provision-garage              idempotent Garage bucket + key setup
 #   ./bootstrap.sh user-create <app> <username> <email>
 #
-# <stack>/<app>: shared-db | garage | pixelfed | mastodon | diaspora | funkwhale | gotosocial | peertube
+# <stack>/<app>: shared-db | garage | pixelfed | mastodon | diaspora | funkwhale | gotosocial | peertube | stalwart | authelia
 #
 # Bring-up order: shared-db → garage → app stacks.
 #
@@ -37,9 +37,9 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${REPO_ROOT}/.env"
-ALL_STACKS=(shared-db garage pixelfed mastodon diaspora funkwhale gotosocial peertube)
+ALL_STACKS=(shared-db garage pixelfed mastodon diaspora funkwhale gotosocial peertube stalwart authelia)
 # Stacks that need a Postgres DB provisioned before starting.
-DB_STACKS=(pixelfed mastodon diaspora funkwhale gotosocial peertube)
+DB_STACKS=(pixelfed mastodon diaspora funkwhale gotosocial peertube stalwart authelia)
 
 # Load .env — required before any command.
 if [[ -f "$ENV_FILE" ]]; then
@@ -168,8 +168,14 @@ cmd_provision_db() {
       _provision_extension "${PEERTUBE_DB_NAME}" unaccent
       _provision_extension "${PEERTUBE_DB_NAME}" uuid-ossp
       ;;
+    stalwart)
+      _provision_role_db "${STALWART_DB_USER:-stalwart}" "${STALWART_DB_PASSWORD}" "${STALWART_DB_NAME:-stalwart}"
+      ;;
+    authelia)
+      _provision_role_db "${AUTHELIA_DB_USER:-authelia}" "${AUTHELIA_DB_PASSWORD}" "${AUTHELIA_DB_NAME:-authelia}"
+      ;;
     *)
-      die "Unknown app '${app}'. Valid: pixelfed mastodon diaspora funkwhale gotosocial peertube"
+      die "Unknown app '${app}'. Valid: pixelfed mastodon diaspora funkwhale gotosocial peertube stalwart authelia"
       ;;
   esac
   echo "[bootstrap] DB provisioning complete for ${app}."
@@ -228,7 +234,7 @@ cmd_provision_garage() {
   fi
 
   echo "[bootstrap] Ensuring buckets..."
-  local buckets=(pg-backups mastodon-media pixelfed-media gotosocial-media peertube-web-videos peertube-streaming-playlists funkwhale-music)
+  local buckets=(pg-backups mastodon-media pixelfed-media gotosocial-media stalwart-mail peertube-web-videos peertube-streaming-playlists funkwhale-music)
   for bucket in "${buckets[@]}"; do
     if _g bucket create "$bucket" 2>/dev/null; then
       echo "[bootstrap]   created: ${bucket}"
@@ -274,7 +280,7 @@ cmd_provision_garage() {
   # terminates public TLS and forwards to this endpoint — see
   # nginx/sites-available/garage-media.conf.
   #
-  # pg-backups is intentionally excluded; it must stay private.
+  # pg-backups and stalwart-mail are intentionally excluded — mail blobs are private.
   local public_buckets=(mastodon-media pixelfed-media gotosocial-media peertube-web-videos peertube-streaming-playlists funkwhale-music)
   echo "[bootstrap] Enabling website serving on public media buckets..."
   for bucket in "${public_buckets[@]}"; do
@@ -385,6 +391,21 @@ cmd_up() {
 
     cmd_provision_garage
     return 0
+  fi
+
+  # Generate stalwart/config/config.runtime.json from the tracked template,
+  # substituting .env values. Pattern mirrors garage.runtime.toml.
+  if [[ "$stack" == "stalwart" ]]; then
+    local db_host="${DB_MAGIC_NAME}.${TS_TAILNET}"
+    local db_name="${STALWART_DB_NAME:-stalwart}"
+    local db_user="${STALWART_DB_USER:-stalwart}"
+    sed \
+      -e "s|__DB_HOST__|${db_host}|g" \
+      -e "s|__STALWART_DB_NAME__|${db_name}|g" \
+      -e "s|__STALWART_DB_USER__|${db_user}|g" \
+      "${REPO_ROOT}/stalwart/config/config.json" \
+      > "${REPO_ROOT}/stalwart/config/config.runtime.json"
+    echo "[bootstrap] Generated stalwart/config/config.runtime.json (host=${db_host}, db=${db_name}, user=${db_user})."
   fi
 
   echo "[bootstrap] Starting ${stack}..."
@@ -552,8 +573,18 @@ You can reset the root password instead:
         /gotosocial/gotosocial admin account promote --username "$username"
       ;;
 
+    authelia)
+      echo "[bootstrap] Authelia has no CLI user-create flow."
+      echo "[bootstrap] Steps to add users:"
+      echo "[bootstrap]   1. Bring up the authelia stack first: ./bootstrap.sh up authelia"
+      echo "[bootstrap]   2. Generate a password hash:"
+      echo "[bootstrap]      docker exec federated-authelia-authelia-1 authelia crypto hash generate argon2 --password 'yourpassword'"
+      echo "[bootstrap]   3. Edit authelia/users.yml with the hashed password."
+      echo "[bootstrap]      (users.yml is gitignored — it is operator-managed)"
+      ;;
+
     *)
-      die "Unknown app '${app}'. Valid: mastodon pixelfed diaspora funkwhale gotosocial peertube"
+      die "Unknown app '${app}'. Valid: mastodon pixelfed diaspora funkwhale gotosocial peertube authelia"
       ;;
 
   esac
