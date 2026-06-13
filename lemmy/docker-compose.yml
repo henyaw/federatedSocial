@@ -89,7 +89,14 @@ services:
       # LEMMY_UI_HTTPS. A "https://" prefix here produces malformed
       # "https://https://..." URLs in server-rendered output.
       LEMMY_UI_LEMMY_EXTERNAL_HOST: "${LEMMY_DOMAIN}"
-      LEMMY_UI_HTTPS: "true"
+      # MUST be false: TLS terminates at the host Caddy, so the backend is
+      # reachable only over plain HTTP internally. lemmy-ui's SSR builds its
+      # backend URL as http{s}://INTERNAL_HOST from this flag — setting it true
+      # makes SSR dial https://localhost:8536 and fail (the backend speaks HTTP
+      # on the socket; Lemmy's own tls_enabled only affects generated URLs).
+      # The browser still gets correct https links via window.location, and
+      # federation URLs come from lemmy.hjson tls_enabled: true.
+      LEMMY_UI_HTTPS: "false"
     depends_on:
       ts-lemmy-web:
         condition: service_healthy
