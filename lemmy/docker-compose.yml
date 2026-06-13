@@ -23,7 +23,7 @@ name: federated-lemmy
 services:
 
   ts-lemmy-web:
-    image: tailscale/tailscale:latest
+    image: tailscale/tailscale:${TAILSCALE_VERSION:-v1.98.4}
     hostname: ${LEMMY_MAGIC_NAME}
     environment:
       TS_AUTHKEY: ${TS_OAUTH_CLIENT_SECRET}?ephemeral=true
@@ -53,7 +53,7 @@ services:
     # nginx aggregator — routes /, /api, /pictrs, /feeds, etc. to the
     # correct backend on localhost. The reverse proxy on the host reaches
     # this container on port 80. See nginx.conf for routing details.
-    image: nginx:alpine
+    image: nginx:1.31-alpine
     network_mode: "service:ts-lemmy-web"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
@@ -105,7 +105,7 @@ services:
   pictrs:
     # pict-rs: image hosting service. Lemmy proxies /pictrs/* requests here.
     # PICTRS__SERVER__API_KEY must match pictrs.api_key in lemmy.runtime.hjson.
-    image: asonix/pictrs:0.5
+    image: asonix/pictrs:0.5.23
     network_mode: "service:ts-lemmy-web"
     environment:
       PICTRS__SERVER__API_KEY: ${LEMMY_PICTRS_API_KEY}

@@ -26,7 +26,7 @@ name: federated-peertube
 services:
 
   ts-peertube-web:
-    image: tailscale/tailscale:latest
+    image: tailscale/tailscale:${TAILSCALE_VERSION:-v1.98.4}
     hostname: ${PEERTUBE_WEB_MAGIC_NAME}
     environment:
       TS_AUTHKEY: ${TS_OAUTH_CLIENT_SECRET}?ephemeral=true

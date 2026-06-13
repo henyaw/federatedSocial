@@ -80,7 +80,7 @@ services:
   # ---------------------------------------------------------------------
 
   ts-mastodon-web:
-    image: tailscale/tailscale:latest
+    image: tailscale/tailscale:${TAILSCALE_VERSION:-v1.98.4}
     hostname: ${MASTODON_WEB_MAGIC_NAME}
     environment:
       TS_AUTHKEY: ${TS_OAUTH_CLIENT_SECRET}?ephemeral=true
@@ -106,7 +106,7 @@ services:
     restart: unless-stopped
 
   web:
-    image: ghcr.io/mastodon/mastodon:latest
+    image: ghcr.io/mastodon/mastodon:${MASTODON_VERSION:-v4.5.11}
     network_mode: "service:ts-mastodon-web"
     # db:migrate is idempotent — Rails skips already-applied migrations.
     # db:seed is idempotent — creates built-in roles (Owner/Admin/Moderator)
@@ -140,7 +140,7 @@ services:
   # ---------------------------------------------------------------------
 
   ts-mastodon-streaming:
-    image: tailscale/tailscale:latest
+    image: tailscale/tailscale:${TAILSCALE_VERSION:-v1.98.4}
     hostname: ${MASTODON_STREAMING_MAGIC_NAME}
     environment:
       TS_AUTHKEY: ${TS_OAUTH_CLIENT_SECRET}?ephemeral=true
@@ -166,7 +166,7 @@ services:
     restart: unless-stopped
 
   streaming:
-    image: ghcr.io/mastodon/mastodon-streaming:latest
+    image: ghcr.io/mastodon/mastodon-streaming:${MASTODON_VERSION:-v4.5.11}
     network_mode: "service:ts-mastodon-streaming"
     environment:
       <<: *mastodon-env
@@ -188,7 +188,7 @@ services:
   # ---------------------------------------------------------------------
 
   ts-mastodon-sidekiq:
-    image: tailscale/tailscale:latest
+    image: tailscale/tailscale:${TAILSCALE_VERSION:-v1.98.4}
     hostname: ${MASTODON_SIDEKIQ_MAGIC_NAME}
     environment:
       TS_AUTHKEY: ${TS_OAUTH_CLIENT_SECRET}?ephemeral=true
@@ -214,7 +214,7 @@ services:
     restart: unless-stopped
 
   sidekiq:
-    image: ghcr.io/mastodon/mastodon:latest
+    image: ghcr.io/mastodon/mastodon:${MASTODON_VERSION:-v4.5.11}
     network_mode: "service:ts-mastodon-sidekiq"
     command: ["bundle", "exec", "sidekiq"]
     environment:

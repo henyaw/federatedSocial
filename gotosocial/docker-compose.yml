@@ -11,7 +11,7 @@ name: federated-gotosocial
 services:
 
   ts-gotosocial-web:
-    image: tailscale/tailscale:latest
+    image: tailscale/tailscale:${TAILSCALE_VERSION:-v1.98.4}
     hostname: ${GOTOSOCIAL_WEB_MAGIC_NAME}
     environment:
       TS_AUTHKEY: ${TS_OAUTH_CLIENT_SECRET}?ephemeral=true
@@ -37,7 +37,7 @@ services:
     restart: unless-stopped
 
   gotosocial:
-    image: docker.io/superseriousbusiness/gotosocial:latest
+    image: docker.io/superseriousbusiness/gotosocial:${GOTOSOCIAL_VERSION:-0.21.2}
     network_mode: "service:ts-gotosocial-web"
     environment:
       GTS_HOST: ${GOTOSOCIAL_URL}

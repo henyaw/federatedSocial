@@ -8,9 +8,9 @@
 #   docker build -t stalwart-caddy-l4 ./caddy
 #
 # Add more plugins by appending &p=<url-encoded module path> to CADDY_DOWNLOAD.
-FROM caddy:2.11
+FROM caddy:2.11.4
 
-ARG CADDY_DOWNLOAD="https://caddyserver.com/api/download?os=linux&arch=amd64&p=github.com%2Fmholt%2Fcaddy-l4"
+ARG CADDY_DOWNLOAD="https://caddyserver.com/api/download?os=linux&arch=amd64&p=github.com%2Fmholt%2Fcaddy-l4&v=2.11.4"
 
 RUN apk add --no-cache curl gettext \
  && curl -fsSL -o /usr/bin/caddy "$CADDY_DOWNLOAD" \

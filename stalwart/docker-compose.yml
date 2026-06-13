@@ -25,7 +25,7 @@ name: federated-stalwart
 services:
 
   ts-stalwart:
-    image: tailscale/tailscale:latest
+    image: tailscale/tailscale:${TAILSCALE_VERSION:-v1.98.4}
     hostname: ${STALWART_MAGIC_NAME}
     environment:
       TS_AUTHKEY: ${TS_OAUTH_CLIENT_SECRET}?ephemeral=true
@@ -58,7 +58,7 @@ services:
   stalwart:
     # Tested against v0.16.7. Pin a specific tag in production — Stalwart has
     # had breaking config changes between minor versions.
-    image: stalwartlabs/stalwart:latest
+    image: stalwartlabs/stalwart:${STALWART_VERSION:-v0.16.8}
     network_mode: "service:ts-stalwart"
     environment:
       # Bootstrap config: only STALWART_DB_PASSWORD is read from environment by
