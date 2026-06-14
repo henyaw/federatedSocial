@@ -17,7 +17,7 @@ services:
   # ---------------------------------------------------------------------
 
   ts-postgres:
-    image: tailscale/tailscale:latest
+    image: tailscale/tailscale:${TAILSCALE_VERSION:-v1.98.4}
     hostname: ${DB_MAGIC_NAME}
     environment:
       TS_AUTHKEY: ${TS_OAUTH_CLIENT_SECRET}?ephemeral=true
@@ -38,7 +38,7 @@ services:
       - NET_ADMIN
       - NET_RAW
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9002/healthz"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9002/healthz"]
       interval: 10s
       timeout: 5s
       retries: 6
@@ -67,6 +67,12 @@ services:
       FUNKWHALE_DB_NAME: ${FUNKWHALE_DB_NAME}
       FUNKWHALE_DB_USER: ${FUNKWHALE_DB_USER}
       FUNKWHALE_DB_PASSWORD: ${FUNKWHALE_DB_PASSWORD}
+      GOTOSOCIAL_DB_NAME: ${GOTOSOCIAL_DB_NAME}
+      GOTOSOCIAL_DB_USER: ${GOTOSOCIAL_DB_USER}
+      GOTOSOCIAL_DB_PASSWORD: ${GOTOSOCIAL_DB_PASSWORD}
+      PEERTUBE_DB_NAME: ${PEERTUBE_DB_NAME}
+      PEERTUBE_DB_USER: ${PEERTUBE_DB_USER}
+      PEERTUBE_DB_PASSWORD: ${PEERTUBE_DB_PASSWORD}
     volumes:
       - pg-data:/var/lib/postgresql/data
       - ./initdb:/docker-entrypoint-initdb.d:ro
@@ -86,7 +92,7 @@ services:
   # ---------------------------------------------------------------------
 
   ts-redis:
-    image: tailscale/tailscale:latest
+    image: tailscale/tailscale:${TAILSCALE_VERSION:-v1.98.4}
     hostname: ${REDIS_MAGIC_NAME}
     environment:
       TS_AUTHKEY: ${TS_OAUTH_CLIENT_SECRET}?ephemeral=true
@@ -104,7 +110,7 @@ services:
       - NET_ADMIN
       - NET_RAW
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9002/healthz"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9002/healthz"]
       interval: 10s
       timeout: 5s
       retries: 6

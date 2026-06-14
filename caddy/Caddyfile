@@ -28,6 +28,90 @@
 
 {
   email admin@example.com
+
+  # ---------------------------------------------------------------------------
+  # L4 mail edge — Stalwart TCP pass-through
+  # ---------------------------------------------------------------------------
+  # Remove or comment out this entire layer4 block if you are NOT using Caddy
+  # as the mail port edge on this host (e.g. you have a dedicated edge box
+  # running stalwart/caddy/docker-compose.yml instead).
+  #
+  # Replace stalwart.tailfe8c.ts.net with your STALWART_MAGIC_NAME.TS_TAILNET
+  # value and mail.example.com with your STALWART_DOMAIN value.
+  #
+  # REQUIRES the custom Caddy binary with caddy-l4 module.
+  # See caddy/README.md for download and installation instructions.
+
+  layer4 {
+    # ---- SMTP (plaintext + STARTTLS) ----
+    :25 {
+      route {
+        proxy {
+          proxy_protocol v2
+          upstream stalwart.tailfe8c.ts.net:25
+        }
+      }
+    }
+    # ---- SMTPS (implicit TLS) ----
+    :465 {
+      route {
+        proxy {
+          proxy_protocol v2
+          upstream stalwart.tailfe8c.ts.net:465
+        }
+      }
+    }
+    # ---- Submission (STARTTLS) ----
+    :587 {
+      route {
+        proxy {
+          proxy_protocol v2
+          upstream stalwart.tailfe8c.ts.net:587
+        }
+      }
+    }
+    # ---- IMAP (plaintext + STARTTLS) ----
+    :143 {
+      route {
+        proxy {
+          proxy_protocol v2
+          upstream stalwart.tailfe8c.ts.net:143
+        }
+      }
+    }
+    # ---- IMAPS (implicit TLS) ----
+    :993 {
+      route {
+        proxy {
+          proxy_protocol v2
+          upstream stalwart.tailfe8c.ts.net:993
+        }
+      }
+    }
+    # ---- :443 SNI fan-out ----
+    # Stalwart's web endpoints (MTA-STS policy, autoconfig, autodiscover)
+    # present specific SNI names — route those to Stalwart, which terminates
+    # TLS with its own wildcard cert. No PROXY protocol on :443.
+    # All other SNI falls through to this Caddy's own HTTPS listener on :8443.
+    #
+    # IMPORTANT: because this block owns :443, add https_port 8443 to the
+    # global options block (uncomment the line below) so Caddy's web vhosts
+    # move off :443.
+    # https_port 8443
+    :443 {
+      route {
+        @stalwart-sni tls sni mta-sts.mail.example.com autoconfig.mail.example.com autodiscover.mail.example.com
+        proxy @stalwart-sni {
+          upstream stalwart.tailfe8c.ts.net:443
+        }
+      }
+      route {
+        proxy {
+          upstream 127.0.0.1:8443
+        }
+      }
+    }
+  }
 }
 
 # ---------------------------------------------------------------------------
@@ -70,4 +154,114 @@ diaspora.example.com {
 # Rocket (Rust) on :7878 serves the whole app — federation, web UI, assets.
 plume.example.com {
   reverse_proxy plume.tailfe8c.ts.net:7878
+}
+
+# ---------------------------------------------------------------------------
+# Funkwhale
+# ---------------------------------------------------------------------------
+# The funkwhale `front` container (nginx serving the Vue SPA and proxying to
+# the API on 127.0.0.1:5000 inside its shared netns) listens on :80. Audio
+# uploads can be large; the front nginx is configured for 100M
+# (NGINX_MAX_BODY_SIZE in funkwhale/docker-compose.yml). Match here.
+funkwhale.example.com {
+  request_body {
+    max_size 100MB
+  }
+  reverse_proxy funkwhale.tailfe8c.ts.net:80
+}
+
+# ---------------------------------------------------------------------------
+# GoToSocial
+# ---------------------------------------------------------------------------
+# GTS serves everything (web, API, federation, streaming WebSockets) on :8080.
+# Caddy upgrades WebSockets transparently. Media-local-max-size defaults to
+# 40 MiB; bump both here and gotosocial config if you raise it.
+gotosocial.example.com {
+  request_body {
+    max_size 40MB
+  }
+  reverse_proxy gotosocial.tailfe8c.ts.net:8080
+}
+
+# ---------------------------------------------------------------------------
+# PeerTube (HTTP/HTTPS)
+# ---------------------------------------------------------------------------
+# PeerTube serves the web UI, API, federation, and live-streaming WebSocket
+# (/socket.io) on :9000. Caddy upgrades WebSockets automatically.
+#
+# Uploads are large by design — raise max_size to a comfortable ceiling for
+# your instance. The long write/read timeouts are for slow uploads on
+# residential connections.
+#
+# NOTE: RTMP live ingest is a separate concern. Caddy does not proxy raw TCP
+# (no equivalent to nginx's stream module). If you need PUBLIC RTMP ingest,
+# either:
+#   - have streamers publish directly to the tailnet hostname
+#     (rtmp://peertube.tailfe8c.ts.net:1935 — most secure, no public
+#     exposure), or
+#   - run nginx alongside Caddy for just the stream {} block — see
+#     nginx/sites-available/peertube-rtmp.conf for the reference snippet.
+peertube.example.com {
+  request_body {
+    max_size 8GB
+  }
+  reverse_proxy peertube.tailfe8c.ts.net:9000 {
+    transport http {
+      read_timeout 600s
+      write_timeout 600s
+      dial_timeout 30s
+    }
+    flush_interval -1
+  }
+}
+
+# ---------------------------------------------------------------------------
+# Lemmy
+# ---------------------------------------------------------------------------
+# Lemmy's stack runs an internal nginx (the `proxy` container) that fans out
+# to the backend (:8536), the SSR UI (:1234), and pict-rs (:8080) — all on
+# localhost inside the shared sidecar netns. That internal nginx listens on
+# :80, so the host proxy only needs to reach :80. WebSocket upgrades for live
+# updates are handled by Caddy automatically.
+#
+# max_size matches client_max_body_size in lemmy/nginx.conf (the upstream
+# Lemmy nginx default) — raise both together, plus pict-rs's
+# PICTRS__MEDIA__MAX_FILE_SIZE, for larger uploads.
+lemmy.example.com {
+  request_body {
+    max_size 20MB
+  }
+  reverse_proxy lemmy.tailfe8c.ts.net:80
+}
+
+# ---------------------------------------------------------------------------
+# Authelia — SSO / OIDC login portal
+# ---------------------------------------------------------------------------
+# Authelia listens on :9091 inside its sidecar. All OIDC flows from GTS,
+# Mastodon, Funkwhale, and PeerTube redirect the browser here for login.
+auth.example.com {
+  reverse_proxy authelia.tailfe8c.ts.net:9091
+}
+
+# ---------------------------------------------------------------------------
+# Stalwart — JMAP API and admin web panel
+# ---------------------------------------------------------------------------
+# Stalwart's JMAP/admin HTTP server listens on :8080 inside its sidecar.
+#
+# IMPORTANT — :443 collision: if this Caddy host is ALSO running the
+# Stalwart L4 edge (stalwart/caddy/), that process owns the public :443
+# listener for SNI fan-out (MTA-STS/autoconfig/autodiscover pass-through).
+# Caddy cannot bind :443 at the same time. Move this Caddy's HTTPS listener
+# off :443 by adding to the global options block above:
+#
+#     {
+#       email admin@example.com
+#       https_port 8443           # <-- add this
+#     }
+#
+# The L4 edge's catch-all SNI route forwards unmatched :443 traffic to
+# 127.0.0.1:8443, so these blocks continue to work on a shared host.
+# A dedicated reverse-proxy host (separate from the mailbox) needs no change.
+mail.example.com {
+  reverse_proxy stalwart.tailfe8c.ts.net:8080
 }

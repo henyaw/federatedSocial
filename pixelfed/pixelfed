@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Pixelfed artisan wrapper.
+#
+# Copy to /usr/local/bin/pixelfed (or anywhere on PATH) and make executable:
+#   sudo cp pixelfed/pixelfed /usr/local/bin/pixelfed
+#   sudo chmod +x /usr/local/bin/pixelfed
+#
+# Usage:
+#   pixelfed <artisan-command> [args...]   # runs: php artisan <command>
+#   pixelfed shell                         # interactive bash shell as www-data
+#   pixelfed tinker                        # Laravel tinker REPL as www-data
+#
+# Examples:
+#   pixelfed user:show --username alice
+#   pixelfed horizon:status
+#   pixelfed cache:clear
+#   pixelfed storage:link
+#   pixelfed media:gc
+#   pixelfed tinker
+
+set -euo pipefail
+
+COMPOSE_FILE="$(dirname "$(realpath "$0")")/../pixelfed/docker-compose.yml"
+CONTAINER="web"
+USER="www-data"
+
+case "${1:-}" in
+  shell)
+    exec docker compose -f "$COMPOSE_FILE" exec -u "$USER" "$CONTAINER" bash
+    ;;
+  tinker)
+    exec docker compose -f "$COMPOSE_FILE" exec -u "$USER" "$CONTAINER" php artisan tinker
+    ;;
+  "")
+    exec docker compose -f "$COMPOSE_FILE" exec -u "$USER" "$CONTAINER" php artisan list
+    ;;
+  *)
+    exec docker compose -f "$COMPOSE_FILE" exec -u "$USER" "$CONTAINER" php artisan "$@"
+    ;;
+esac
