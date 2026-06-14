@@ -140,6 +140,24 @@ pixelfed.example.com {
 }
 
 # ---------------------------------------------------------------------------
+# Pixelfed media — ONLY when storing uploads in S3/Garage (PF_ENABLE_CLOUD=true)
+# ---------------------------------------------------------------------------
+# With cloud storage, Pixelfed builds media URLs from AWS_URL, so set
+# PIXELFED_S3_URL=https://pixelfed-media.example.com in .env (it becomes the
+# app's AWS_URL) and this block fronts Garage's web endpoint (:3902 — the app
+# itself talks to the S3 API on :3900 via AWS_ENDPOINT). The header_up Host
+# line is the whole point: object stores route by Host, so we send the *bucket
+# vhost* (<AWS_BUCKET>.<garage-web-root-domain, set in garage.toml>), not the
+# public hostname, so Garage serves the right bucket. This is GET-only public
+# traffic — uploads go from the app to Garage over the tailnet, not through here.
+pixelfed-media.example.com {
+  header Strict-Transport-Security "max-age=31536000"
+  reverse_proxy http://garage.tailfe8c.ts.net:3902 {
+    header_up Host pixelfed-media.web.garage.local
+  }
+}
+
+# ---------------------------------------------------------------------------
 # Mastodon — Rails web + Node streaming behind one public hostname
 # ---------------------------------------------------------------------------
 # /api/v1/streaming/* goes to the Node streaming server on :4000 (WebSocket
