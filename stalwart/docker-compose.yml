@@ -7,18 +7,18 @@
 # the reverse proxy box).
 #
 # FIRST BOOT:
-#   1. ./bootstrap.sh provision-db stalwart   # creates user/db in postgres
-#   2. ./bootstrap.sh up stalwart             # generates config.runtime.json, brings up stack
-#   3. Log into Stalwart admin UI → configure ACME (DNS-01), SMTP, etc.
+#   1. ./bootstrap.sh up stalwart
+#      This generates config.runtime.json, starts the stack, then auto-runs
+#      provision-stalwart which configures stores, domain, listeners, and
+#      accounts from .env via the JMAP API. DNS records are printed to publish.
+#   2. Configure ACME (DNS-01) in the admin UI after provisioning:
+#      http://STALWART_MAGIC_NAME.TS_TAILNET:8080 → Settings → TLS → ACME
+#   3. Restart Stalwart to bind newly-created listeners:
+#      docker compose restart stalwart
 #
-# The bootstrap config (config.runtime.json) only tells Stalwart where its
-# Postgres database is. Everything else (TLS, ACME, SMTP, S3 blobs) is stored
-# in Postgres and managed via the admin UI.
-#
-# PROXY PROTOCOL: the L4 edge sends PROXY protocol v2 on mail ports. Stalwart
-# must trust 100.64.0.0/10 (Tailscale CGNAT) on those listeners. Configure
-# this in the admin UI after first boot — do NOT set it globally or the admin
-# port will also expect PROXY protocol headers and break.
+# config.runtime.json only tells Stalwart where its Postgres database lives.
+# All other config (listeners, PROXY trust, stores, DKIM, domain) is written
+# to Postgres by provision-stalwart and managed via the admin UI thereafter.
 
 name: federated-stalwart
 
@@ -84,3 +84,15 @@ services:
 
 volumes:
   stalwart-data:
+
+# IPv6 egress for the sidecar netns. Without it, Stalwart's MTA falls into the
+# AAAA trap: it tries IPv6 first, gets ENETUNREACH, and for relay next-hops
+# never falls back to A. A ULA subnet is enough — Docker masquerades it via
+# ip6tables; no routable prefix, NDP proxy, or host sysctl needed.
+networks:
+  default:
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: fd00:7a17:600d::/64
+          gateway: fd00:7a17:600d::1

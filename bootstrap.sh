@@ -13,6 +13,7 @@
 #   ./bootstrap.sh ps   [stack]                  show container status
 #   ./bootstrap.sh provision-db <app>            idempotent DB + role setup
 #   ./bootstrap.sh provision-garage              idempotent Garage bucket + key setup
+#   ./bootstrap.sh provision-stalwart            configure Stalwart via JMAP (auto-run by 'up stalwart')
 #   ./bootstrap.sh user-create <app> <username> <email>
 #
 # <stack>/<app>: shared-db | garage | pixelfed | mastodon | diaspora | funkwhale | gotosocial | peertube | stalwart | authelia | lemmy
@@ -321,6 +322,355 @@ cmd_provision_garage() {
   echo "[bootstrap] ============================================================"
 }
 
+# ---------------------------------------------------------------------------
+# Stalwart provisioning — JMAP x: management API
+# Called automatically by `cmd_up stalwart` and available standalone:
+#   ./bootstrap.sh provision-stalwart
+#
+# Idempotent: queries for existing objects before creating. Safe to re-run.
+# ---------------------------------------------------------------------------
+
+# Module-level state for the current provision run (set inside cmd_provision_stalwart).
+_SW_AUTH=""      # "user:password" for HTTP Basic auth
+_SW_ACCT_ID=""   # JMAP account ID (queried from session after auth)
+_SW_JMAP=""      # full JMAP endpoint URL
+
+# PROXY protocol trust for mail listeners only (25/465/587/143/993).
+# Includes Tailscale CGNAT range and the ULA subnet used by the sidecar netns.
+# NOT applied to http(:8080) or https(:443) — those don't receive PROXY headers.
+_SW_NET_TRUST='{"100.64.0.0/10":true,"fd7a:115c:a1e0::/48":true}'
+
+_sw_call() {
+  curl -s -m 25 -u "$_SW_AUTH" -H 'Content-Type: application/json' "$_SW_JMAP" -X POST \
+    --data "$(jq -nc --argjson mc "$1" \
+      '{"using":["urn:ietf:params:jmap:core","urn:stalwart:jmap"],"methodCalls":$mc}')"
+}
+
+_sw_ok() {
+  local r="$1"
+  if echo "$r" | jq -e '.methodResponses[0][0]=="error"' >/dev/null 2>&1; then
+    die "JMAP error: $(echo "$r" | jq -c '.methodResponses[0][1]')"
+  fi
+  if echo "$r" | jq -e '.methodResponses[0][1] | (.notCreated//{}|length>0) or (.notUpdated//{}|length>0) or (.notDestroyed//[]|length>0)' >/dev/null 2>&1; then
+    die "JMAP set rejected: $(echo "$r" | jq -c '.methodResponses[0][1]|{notCreated,notUpdated,notDestroyed}')"
+  fi
+}
+
+# Find the ID of a named object of the given type. Returns empty string if absent.
+_sw_find_id() {
+  local type="$1" name="$2"
+  local r; r=$(_sw_call "$(jq -nc --arg t "$type" --arg acct "$_SW_ACCT_ID" '[
+    [($t+"/query"), {"accountId":$acct}, "0"],
+    [($t+"/get"),   {"accountId":$acct,
+                     "#ids":{"resultOf":"0","name":($t+"/query"),"path":"/ids"},
+                     "properties":["name"]}, "1"]
+  ]')")
+  echo "$r" | jq -r --arg n "$name" '.methodResponses[1][1].list[]? | select(.name==$n) | .id' | head -1
+}
+
+# Authenticate. Prefers the persistent admin@DOMAIN; falls back to the
+# first-boot virtual admin ("admin") if no real account exists yet.
+_sw_auth() {
+  local u
+  for u in "admin@${STALWART_DOMAIN}" "admin"; do
+    if curl -s -m 8 -u "${u}:${STALWART_FALLBACK_ADMIN_SECRET}" \
+        -o /dev/null -w '%{http_code}' "${_SW_JMAP}/session" 2>/dev/null | grep -q 200; then
+      _SW_AUTH="${u}:${STALWART_FALLBACK_ADMIN_SECRET}"
+      echo "[bootstrap]   authenticated as ${u}"
+      return 0
+    fi
+  done
+  die "Cannot authenticate to Stalwart at ${_SW_JMAP} — check STALWART_FALLBACK_ADMIN_SECRET"
+}
+
+# Populate _SW_ACCT_ID from the JMAP session response.
+_sw_get_acct_id() {
+  local session
+  session=$(curl -s -m 10 -u "$_SW_AUTH" "${_SW_JMAP}/session")
+  _SW_ACCT_ID=$(echo "$session" | jq -r '
+    .primaryAccounts["urn:ietf:params:jmap:core"] //
+    .primaryAccounts["urn:stalwart:jmap"] //
+    (.accounts | to_entries | first | .key) //
+    empty
+  ')
+  [[ -n "$_SW_ACCT_ID" ]] || \
+    die "Cannot determine JMAP account ID from session. Is Stalwart fully initialized?"
+  echo "[bootstrap]   JMAP account ID: ${_SW_ACCT_ID}"
+}
+
+# Switch to the persistent admin@DOMAIN after creating it. Once a real admin
+# exists, Stalwart's first-boot fallback goes inert — all subsequent calls
+# must use the real account or they will get 401.
+_sw_re_auth() {
+  local u="admin@${STALWART_DOMAIN}"
+  if curl -s -m 8 -u "${u}:${STALWART_FALLBACK_ADMIN_SECRET}" \
+      -o /dev/null -w '%{http_code}' "${_SW_JMAP}/session" 2>/dev/null | grep -q 200; then
+    _SW_AUTH="${u}:${STALWART_FALLBACK_ADMIN_SECRET}"
+    _sw_get_acct_id
+    echo "[bootstrap]   re-authenticated as ${u}"
+  fi
+}
+
+cmd_provision_stalwart() {
+  command -v jq >/dev/null || die "jq is required: apt install jq"
+
+  local missing=()
+  for v in STALWART_MAGIC_NAME TS_TAILNET STALWART_DOMAIN STALWART_HOSTNAME \
+            STALWART_FALLBACK_ADMIN_SECRET STALWART_REDIS_DB \
+            REDIS_MAGIC_NAME GARAGE_MAGIC_NAME GARAGE_REGION \
+            GARAGE_ACCESS_KEY_ID GARAGE_SECRET_ACCESS_KEY \
+            STALWART_S3_BUCKET STALWART_RELAY_USER STALWART_RELAY_PASSWORD; do
+    [[ -n "${!v:-}" ]] || missing+=("$v")
+  done
+  [[ ${#missing[@]} -eq 0 ]] || die "Required vars missing from .env: ${missing[*]}"
+
+  _SW_JMAP="http://${STALWART_MAGIC_NAME}.${TS_TAILNET}:8080/jmap"
+  local relay_addr="${STALWART_RELAY_USER}@${STALWART_DOMAIN}"
+
+  echo "[bootstrap] Provisioning Stalwart at ${_SW_JMAP}..."
+  echo "[bootstrap] Waiting for JMAP API (up to 120 s)..."
+  local elapsed=0 interval=5 timeout=120
+  while true; do
+    if curl -s -m 5 -o /dev/null -w '%{http_code}' "${_SW_JMAP}/session" 2>/dev/null | grep -qE '^[24]'; then
+      break
+    fi
+    elapsed=$(( elapsed + interval ))
+    if [[ $elapsed -ge $timeout ]]; then
+      die "Stalwart JMAP API did not respond after ${timeout}s.
+  Ensure shared-db and garage are healthy: ./bootstrap.sh ps
+  Check Stalwart logs: ./bootstrap.sh logs stalwart"
+    fi
+    sleep "$interval"
+  done
+
+  _sw_auth
+  _sw_get_acct_id
+
+  # ── Blob store → Garage S3 ────────────────────────────────────────────────
+  echo "[bootstrap] Setting blob store (Garage S3, bucket ${STALWART_S3_BUCKET})..."
+  _sw_ok "$(_sw_call "$(jq -nc \
+    --arg ep     "http://${GARAGE_MAGIC_NAME}.${TS_TAILNET}:3900" \
+    --arg region "${GARAGE_REGION}" \
+    --arg bucket "${STALWART_S3_BUCKET}" \
+    --arg ak     "${GARAGE_ACCESS_KEY_ID}" \
+    --arg sk     "${GARAGE_SECRET_ACCESS_KEY}" \
+    --arg acct   "$_SW_ACCT_ID" \
+    '[["x:BlobStore/set",{"accountId":$acct,"update":{"singleton":{
+      "@type":"S3",
+      "region":{"@type":"Custom","customEndpoint":$ep,"customRegion":$region},
+      "bucket":$bucket,
+      "accessKey":$ak,
+      "secretKey":{"@type":"Value","secret":$sk},
+      "verifyAfterWrite":true
+    }}},"0"]]')")"
+
+  # ── In-memory store → Redis ───────────────────────────────────────────────
+  echo "[bootstrap] Setting in-memory store (Redis db ${STALWART_REDIS_DB})..."
+  _sw_ok "$(_sw_call "$(jq -nc \
+    --arg url  "redis://${REDIS_MAGIC_NAME}.${TS_TAILNET}:6379/${STALWART_REDIS_DB}" \
+    --arg acct "$_SW_ACCT_ID" \
+    '[["x:InMemoryStore/set",{"accountId":$acct,"update":{"singleton":{
+      "@type":"Redis",
+      "url":$url
+    }}},"0"]]')")"
+
+  # ── Primary domain ────────────────────────────────────────────────────────
+  echo "[bootstrap] Ensuring domain ${STALWART_DOMAIN} (catch-all → ${relay_addr})..."
+  local domain_id
+  domain_id=$(_sw_find_id x:Domain "${STALWART_DOMAIN}")
+  if [[ -z "$domain_id" ]]; then
+    local r; r=$(_sw_call "$(jq -nc \
+      --arg d    "${STALWART_DOMAIN}" \
+      --arg ca   "$relay_addr" \
+      --arg acct "$_SW_ACCT_ID" \
+      '[["x:Domain/set",{"accountId":$acct,"create":{"d":{
+        "name":$d,
+        "isEnabled":true,
+        "description":"Primary mail domain",
+        "catchAllAddress":$ca,
+        "subAddressing":{"@type":"Enabled"},
+        "dkimManagement":{
+          "@type":"Automatic",
+          "algorithms":{"Dkim1Ed25519Sha256":true,"Dkim1RsaSha256":true},
+          "selectorTemplate":"v{version}-{algorithm}-{date-%Y%m%d}",
+          "rotateAfter":7776000000,
+          "retireAfter":604800000,
+          "deleteAfter":2592000000
+        }
+      }}},"0"]]')")
+    _sw_ok "$r"
+    domain_id=$(echo "$r" | jq -r '.methodResponses[0][1].created.d.id')
+    echo "[bootstrap]   domain created (ID: ${domain_id})"
+  else
+    echo "[bootstrap]   domain ${STALWART_DOMAIN} present (ID: ${domain_id})"
+  fi
+
+  # ── Persistent admin account ──────────────────────────────────────────────
+  echo "[bootstrap] Ensuring admin account (admin@${STALWART_DOMAIN})..."
+  if [[ -z "$(_sw_find_id x:Account admin)" ]]; then
+    _sw_ok "$(_sw_call "$(jq -nc \
+      --arg pw   "${STALWART_FALLBACK_ADMIN_SECRET}" \
+      --arg dom  "$domain_id" \
+      --arg acct "$_SW_ACCT_ID" \
+      '[["x:Account/set",{"accountId":$acct,"create":{"a":{
+        "@type":"User",
+        "name":"admin",
+        "domainId":$dom,
+        "description":"System administrator",
+        "roles":{"@type":"Admin"},
+        "credentials":{"0":{"@type":"Password","secret":$pw}}
+      }}},"0"]]')")"
+    echo "[bootstrap]   admin account created"
+  else
+    echo "[bootstrap]   admin account present"
+  fi
+
+  # Switch to the persistent admin — the first-boot fallback goes inert once a
+  # real admin exists and will reject further calls with 401.
+  _sw_re_auth
+
+  # ── Relay / catch-all account ─────────────────────────────────────────────
+  echo "[bootstrap] Ensuring relay account (${relay_addr})..."
+  if [[ -z "$(_sw_find_id x:Account "${STALWART_RELAY_USER}")" ]]; then
+    _sw_ok "$(_sw_call "$(jq -nc \
+      --arg n    "${STALWART_RELAY_USER}" \
+      --arg dom  "$domain_id" \
+      --arg pw   "${STALWART_RELAY_PASSWORD}" \
+      --arg acct "$_SW_ACCT_ID" \
+      '[["x:Account/set",{"accountId":$acct,"create":{"a":{
+        "@type":"User",
+        "name":$n,
+        "domainId":$dom,
+        "description":"Relay and catch-all",
+        "credentials":{"0":{"@type":"Password","secret":$pw}}
+      }}},"0"]]')")"
+    echo "[bootstrap]   relay account ${relay_addr} created"
+  else
+    echo "[bootstrap]   relay account ${relay_addr} present"
+  fi
+
+  # ── Network listeners ─────────────────────────────────────────────────────
+  # proxyTrust=1 → trust Tailscale CGNAT for PROXY protocol v2 (mail ports).
+  # Listeners are created once and persist in Postgres; container restarts do
+  # not recreate them. A container restart is required after NEW listeners are
+  # created for Stalwart to bind the new ports.
+  echo "[bootstrap] Ensuring network listeners..."
+  local listener_rows=(
+    "smtp         25   smtp         0  1"
+    "submission   587  smtp         0  1"
+    "submissions  465  smtp         1  1"
+    "imap         143  imap         0  1"
+    "imaps        993  imap         1  1"
+    "http         8080 http         0  0"
+    "https        443  http         1  0"
+    "sieve        4190 manageSieve  0  0"
+  )
+  local row lname lport lproto limpl ltrust lid impl_bool pt
+  for row in "${listener_rows[@]}"; do
+    read -r lname lport lproto limpl ltrust <<< "$row"
+    lid=$(_sw_find_id x:NetworkListener "$lname")
+    if [[ -n "$lid" ]]; then
+      echo "[bootstrap]   listener ${lname} present"
+      continue
+    fi
+    impl_bool="false"; [[ "$limpl" == 1 ]] && impl_bool="true"
+    pt="{}";            [[ "$ltrust" == 1 ]] && pt="$_SW_NET_TRUST"
+    _sw_ok "$(_sw_call "$(jq -nc \
+      --arg n    "$lname" \
+      --arg bind "[::]:${lport}" \
+      --arg p    "$lproto" \
+      --argjson impl "$impl_bool" \
+      --argjson pt   "$pt" \
+      --arg acct "$_SW_ACCT_ID" \
+      '[["x:NetworkListener/set",{"accountId":$acct,"create":{"l":{
+        "name":$n,
+        "bind":{($bind):true},
+        "protocol":$p,
+        "useTls":true,
+        "tlsImplicit":$impl,
+        "overrideProxyTrustedNetworks":$pt
+      }}},"0"]]')")"
+    echo "[bootstrap]   created listener ${lname} (:${lport})"
+  done
+
+  # ── System settings ───────────────────────────────────────────────────────
+  echo "[bootstrap] Setting system hostname (${STALWART_HOSTNAME}) and default domain..."
+  _sw_ok "$(_sw_call "$(jq -nc \
+    --arg h    "${STALWART_HOSTNAME}" \
+    --arg d    "$domain_id" \
+    --arg acct "$_SW_ACCT_ID" \
+    '[["x:SystemSettings/set",{"accountId":$acct,"update":{"singleton":{
+      "defaultHostname":$h,
+      "defaultDomainId":$d
+    }}},"0"]]')")"
+
+  # ── SSO via Authelia OIDC (opt-in) ────────────────────────────────────────
+  if [[ "${STALWART_SSO_ENABLE:-false}" == "true" ]]; then
+    [[ -n "${AUTHELIA_PORTAL_URL:-}" ]] || \
+      die "STALWART_SSO_ENABLE=true but AUTHELIA_PORTAL_URL is empty"
+    [[ -n "${STALWART_OIDC_CLIENT_SECRET:-}" ]] || \
+      die "STALWART_SSO_ENABLE=true but STALWART_OIDC_CLIENT_SECRET is empty"
+    echo "[bootstrap] Configuring OIDC directory → Authelia (${AUTHELIA_PORTAL_URL})..."
+    if [[ -z "$(_sw_find_id x:Directory authelia)" ]]; then
+      _sw_ok "$(_sw_call "$(jq -nc \
+        --arg iss  "${AUTHELIA_PORTAL_URL}" \
+        --arg ud   "${STALWART_DOMAIN}" \
+        --arg acct "$_SW_ACCT_ID" \
+        '[["x:Directory/set",{"accountId":$acct,"create":{"d":{
+          "@type":"Oidc",
+          "description":"authelia",
+          "issuerUrl":$iss,
+          "claimUsername":"preferred_username",
+          "claimName":"name",
+          "claimGroups":"groups",
+          "usernameDomain":$ud
+        }}},"0"]]')")"
+      echo "[bootstrap]   OIDC directory created"
+    else
+      echo "[bootstrap]   OIDC directory present"
+    fi
+    cat <<OIDCEOF
+
+[bootstrap] Add to authelia/configuration.yml under identity_providers.oidc.clients
+[bootstrap] (hash the secret first):
+[bootstrap]   docker exec federated-authelia-authelia-1 \\
+[bootstrap]     authelia crypto hash generate pbkdf2 --password '${STALWART_OIDC_CLIENT_SECRET}'
+
+    - client_id: stalwart
+      client_name: Stalwart Mail
+      client_secret: '<PBKDF2-HASH-OF-STALWART_OIDC_CLIENT_SECRET>'
+      public: false
+      authorization_policy: two_factor
+      redirect_uris:
+        - https://${STALWART_HOSTNAME}/auth/oauth
+      scopes: [openid, profile, email, groups]
+
+[bootstrap] admin and ${relay_addr} retain password auth as break-glass.
+OIDCEOF
+  fi
+
+  # ── DNS records (always tier-1: print for manual publish) ─────────────────
+  echo ""
+  echo "[bootstrap] ============================================================"
+  echo "[bootstrap]  DNS records to publish for ${STALWART_DOMAIN}"
+  echo "[bootstrap] ============================================================"
+  _sw_call "$(jq -nc \
+    --arg id   "$domain_id" \
+    --arg acct "$_SW_ACCT_ID" \
+    '[["x:Domain/get",{"accountId":$acct,"ids":[$id],"properties":["dnsZoneFile"]},"0"]]')" \
+    | jq -r '.methodResponses[0][1].list[0].dnsZoneFile //
+             "  (not yet available — DKIM keys may still be generating; re-run in a moment)"'
+  echo "[bootstrap] ============================================================"
+  echo ""
+  echo "[bootstrap] Done. Next steps:"
+  echo "[bootstrap]   1. Publish the DNS records above."
+  echo "[bootstrap]   2. Configure ACME (DNS-01) in the admin UI:"
+  echo "[bootstrap]      http://${STALWART_MAGIC_NAME}.${TS_TAILNET}:8080"
+  echo "[bootstrap]      Settings → TLS → ACME Providers → Add"
+  echo "[bootstrap]   3. Restart Stalwart to activate newly-created listeners:"
+  echo "[bootstrap]      docker compose -f stalwart/docker-compose.yml restart stalwart"
+}
+
 _cmd_up_caddy() {
   local caddy_bin="${CADDY_BIN:-/usr/local/bin/caddy}"
   local caddyfile="${REPO_ROOT}/caddy/Caddyfile"
@@ -495,6 +845,14 @@ cmd_up() {
     exit 1
   fi
   echo "[bootstrap] ${stack} is up. Tip: ./bootstrap.sh logs ${stack}"
+
+  # After Stalwart comes up, auto-run provision-stalwart (idempotent).
+  # This wires stores, domain, listeners, and accounts from .env — same as
+  # provision-garage auto-runs after 'up garage'. Run standalone any time:
+  #   ./bootstrap.sh provision-stalwart
+  if [[ "$stack" == "stalwart" ]]; then
+    cmd_provision_stalwart
+  fi
 }
 
 cmd_down() {
@@ -681,13 +1039,14 @@ usage() {
   cat <<EOF
 Usage: ./bootstrap.sh <command> [args]
 
-  up               <stack>               Bring up a stack
-  down             <stack>               Tear down a stack
-  logs             <stack> [service]     Tail logs (Ctrl-C to stop)
-  ps               [stack]               Show container status for one or all stacks
-  provision-db     <app>                 Idempotent DB role + database setup
-  provision-garage                       Idempotent Garage layout + bucket + key setup
-  user-create      <app> <user> <email>  Create an admin user
+  up                  <stack>               Bring up a stack
+  down                <stack>               Tear down a stack
+  logs                <stack> [service]     Tail logs (Ctrl-C to stop)
+  ps                  [stack]               Show container status for one or all stacks
+  provision-db        <app>                 Idempotent DB role + database setup
+  provision-garage                          Idempotent Garage layout + bucket + key setup
+  provision-stalwart                        Configure Stalwart via JMAP (auto-run by 'up stalwart')
+  user-create         <app> <user> <email>  Create an admin user
 
 Stacks: ${ALL_STACKS[*]}
 
@@ -717,9 +1076,10 @@ case "$command" in
   down)         cmd_down "$@" ;;
   logs)         cmd_logs "$@" ;;
   ps)           cmd_ps "$@" ;;
-  provision-db)      cmd_provision_db "$@" ;;
-  provision-garage)  cmd_provision_garage ;;
-  user-create)       cmd_user_create "$@" ;;
+  provision-db)          cmd_provision_db "$@" ;;
+  provision-garage)      cmd_provision_garage ;;
+  provision-stalwart)    cmd_provision_stalwart ;;
+  user-create)           cmd_user_create "$@" ;;
   help|--help|-h) usage ;;
   *) echo "Unknown command: ${command}"; echo ""; usage; exit 1 ;;
 esac
