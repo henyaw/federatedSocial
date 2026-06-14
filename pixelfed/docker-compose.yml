@@ -12,6 +12,84 @@
 
 name: federated-pixelfed
 
+# Shared env for all Pixelfed containers. Each service merges this anchor
+# with <<: *pixelfed-env and adds its own DOCKER_SERVICE_NAME.
+x-pixelfed-env: &pixelfed-env
+  TZ: "UTC"
+  APP_DOMAIN: ${PIXELFED_DOMAIN}
+  APP_KEY: ${PIXELFED_APP_KEY}
+  DB_HOST: ${DB_MAGIC_NAME}.${TS_TAILNET}
+  DB_PORT: "5432"
+  DB_DATABASE: ${PIXELFED_DB_NAME}
+  DB_USERNAME: ${PIXELFED_DB_USER}
+  DB_PASSWORD: ${PIXELFED_DB_PASSWORD}
+  REDIS_HOST: ${REDIS_MAGIC_NAME}.${TS_TAILNET}
+  REDIS_PORT: "6379"
+  # ---- Instance identity ----
+  APP_NAME: ${PIXELFED_APP_NAME:-Pixelfed}
+  APP_TIMEZONE: ${PIXELFED_TIMEZONE:-UTC}
+  APP_LOCALE: ${PIXELFED_LOCALE:-en}
+  # Admin domain — leave blank to use APP_DOMAIN.
+  ADMIN_DOMAIN: ${PIXELFED_ADMIN_DOMAIN:-}
+  INSTANCE_DESCRIPTION: ${PIXELFED_INSTANCE_DESCRIPTION:-}
+  INSTANCE_CONTACT_EMAIL: ${PIXELFED_CONTACT_EMAIL:-}
+  INSTANCE_CONTACT_FORM: ${PIXELFED_CONTACT_FORM:-false}
+  # 100.64.0.0/10 covers all Tailscale CGNAT addresses (every sidecar hop).
+  TRUST_PROXIES: ${PIXELFED_TRUST_PROXIES:-100.64.0.0/10}
+  # ---- Registration ----
+  OPEN_REGISTRATION: ${PIXELFED_OPEN_REGISTRATION:-false}
+  ENFORCE_EMAIL_VERIFICATION: ${PIXELFED_ENFORCE_EMAIL_VERIFICATION:-false}
+  # Curated onboarding — requires admin approval before accounts are activated.
+  INSTANCE_CUR_REG: ${PIXELFED_CUR_REG:-false}
+  # ---- Federation ----
+  ACTIVITY_PUB: ${PIXELFED_ACTIVITY_PUB:-true}
+  AP_REMOTE_FOLLOW: ${PIXELFED_AP_REMOTE_FOLLOW:-true}
+  AP_SHAREDINBOX: ${PIXELFED_AP_SHAREDINBOX:-true}
+  AP_INBOX: ${PIXELFED_AP_INBOX:-true}
+  AP_OUTBOX: ${PIXELFED_AP_OUTBOX:-true}
+  APP_FALLBACK_LOCALE: ${PIXELFED_FALLBACK_LOCALE:-en}
+  ATOM_FEEDS: ${PIXELFED_ATOM_FEEDS:-true}
+  NODEINFO: ${PIXELFED_NODEINFO:-true}
+  WEBFINGER: ${PIXELFED_WEBFINGER:-true}
+  # ---- Moderation ----
+  INSTANCE_REPORTS_EMAIL_ENABLED: ${PIXELFED_REPORTS_EMAIL_ENABLED:-false}
+  INSTANCE_REPORTS_EMAIL_ADDRESSES: ${PIXELFED_REPORTS_EMAIL_ADDRESSES:-}
+  INSTANCE_REPORTS_EMAIL_AUTOSPAM: ${PIXELFED_REPORTS_EMAIL_AUTOSPAM:-false}
+  # ---- Content ----
+  STORIES_ENABLED: ${PIXELFED_STORIES_ENABLED:-false}
+  PF_HIDE_NSFW_ON_PUBLIC_FEEDS: ${PIXELFED_HIDE_NSFW:-false}
+  # ---- Email ----
+  # Driver defaults to 'log' (mail written to the Laravel log, no relay).
+  # Set PIXELFED_MAIL_DRIVER=smtp in .env once the shared SMTP_* relay is
+  # configured. Host/port/user/password come from the shared block; only the
+  # sender address and (TLS/SSL) encryption are Pixelfed-specific.
+  MAIL_DRIVER: ${PIXELFED_MAIL_DRIVER:-log}
+  MAIL_HOST: ${SMTP_HOST:-}
+  MAIL_PORT: ${SMTP_PORT:-587}
+  MAIL_USERNAME: ${SMTP_USER:-}
+  MAIL_PASSWORD: ${SMTP_PASSWORD:-}
+  MAIL_ENCRYPTION: ${PIXELFED_MAIL_ENCRYPTION:-tls}
+  MAIL_FROM_ADDRESS: ${PIXELFED_MAIL_FROM_ADDRESS:-noreply@${PIXELFED_DOMAIN}}
+  MAIL_FROM_NAME: ${SMTP_FROM_NAME:-Pixelfed}
+  # ---- Object storage (S3 via Garage) — opt in ----
+  # Set PIXELFED_ENABLE_CLOUD=true in .env to store uploads in Garage instead
+  # of the local pixelfed-storage volume. Requires GARAGE_ACCESS_KEY_ID and
+  # GARAGE_SECRET_ACCESS_KEY. AWS_USE_PATH_STYLE_ENDPOINT is required — Garage
+  # uses path-style API (http://endpoint/bucket/key).
+  PF_ENABLE_CLOUD: ${PIXELFED_ENABLE_CLOUD:-false}
+  FILESYSTEM_CLOUD: s3
+  PF_LOCAL_AVATAR_TO_CLOUD: ${PIXELFED_LOCAL_AVATAR_TO_CLOUD:-false}
+  MEDIA_DELETE_LOCAL_AFTER_CLOUD: ${PIXELFED_DELETE_LOCAL_AFTER_CLOUD:-false}
+  AWS_ACCESS_KEY_ID: ${GARAGE_ACCESS_KEY_ID:-}
+  AWS_SECRET_ACCESS_KEY: ${GARAGE_SECRET_ACCESS_KEY:-}
+  AWS_DEFAULT_REGION: ${GARAGE_REGION:-garage}
+  AWS_BUCKET: ${PIXELFED_S3_BUCKET:-pixelfed-media}
+  # Inline MagicDNS — Compose does not expand vars inside vars.
+  AWS_ENDPOINT: http://${GARAGE_MAGIC_NAME}.${TS_TAILNET}:3900
+  AWS_USE_PATH_STYLE_ENDPOINT: "true"
+  # Optional CDN URL for public media. Leave blank = use Garage endpoint.
+  AWS_URL: ${PIXELFED_S3_URL:-}
+
 services:
 
   # ---------------------------------------------------------------------
@@ -19,7 +97,7 @@ services:
   # ---------------------------------------------------------------------
 
   ts-pixelfed-web:
-    image: tailscale/tailscale:latest
+    image: tailscale/tailscale:${TAILSCALE_VERSION:-v1.98.4}
     hostname: ${PIXELFED_WEB_MAGIC_NAME}
     environment:
       TS_AUTHKEY: ${TS_OAUTH_CLIENT_SECRET}?ephemeral=true
@@ -37,39 +115,21 @@ services:
       - NET_ADMIN
       - NET_RAW
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9002/healthz"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9002/healthz && nc -z -w3 ${DB_MAGIC_NAME}.${TS_TAILNET} 5432 && nc -z -w3 ${REDIS_MAGIC_NAME}.${TS_TAILNET} 6379"]
       interval: 10s
-      timeout: 5s
+      timeout: 15s
       retries: 6
       start_period: 30s
     restart: unless-stopped
 
   web:
-    image: ghcr.io/pixelfed-glitch/pixelfed:nginx-${PIXELFED_VERSION}
+    image: ghcr.io/pixelfed-glitch/pixelfed:nginx-${PIXELFED_VERSION:-0.12.6-glitch.1.12.1}
     network_mode: "service:ts-pixelfed-web"
     entrypoint: ["/usr/local/bin/ts-entrypoint.sh"]
     command: ["forego", "start", "-r"]
     environment:
-      TZ: "UTC"
+      <<: *pixelfed-env
       DOCKER_SERVICE_NAME: "web"
-      APP_DOMAIN: ${PIXELFED_DOMAIN}
-      APP_KEY: ${PIXELFED_APP_KEY}
-      DB_HOST: ${DB_MAGIC_NAME}.${TS_TAILNET}
-      DB_PORT: "5432"
-      DB_DATABASE: ${PIXELFED_DB_NAME}
-      DB_USERNAME: ${PIXELFED_DB_USER}
-      DB_PASSWORD: ${PIXELFED_DB_PASSWORD}
-      REDIS_HOST: ${REDIS_MAGIC_NAME}.${TS_TAILNET}
-      REDIS_PORT: "6379"
-      ENFORCE_EMAIL_VERIFICATION: ${PIXELFED_ENFORCE_EMAIL_VERIFICATION:-false}
-      MAIL_MAILER: ${PIXELFED_MAIL_MAILER:-log}
-      MAIL_HOST: ${PIXELFED_SMTP_HOST:-}
-      MAIL_PORT: ${PIXELFED_SMTP_PORT:-587}
-      MAIL_USERNAME: ${PIXELFED_SMTP_USERNAME:-}
-      MAIL_PASSWORD: ${PIXELFED_SMTP_PASSWORD:-}
-      MAIL_ENCRYPTION: ${PIXELFED_SMTP_ENCRYPTION:-null}
-      MAIL_FROM_ADDRESS: ${PIXELFED_MAIL_FROM_ADDRESS:-pixelfed@${PIXELFED_DOMAIN}}
-      MAIL_FROM_NAME: ${PIXELFED_MAIL_FROM_NAME:-Pixelfed}
     volumes:
       - ./entrypoint-wrapper.sh:/usr/local/bin/ts-entrypoint.sh:ro
       - pixelfed-storage:/var/www/storage
@@ -90,7 +150,7 @@ services:
   # ---------------------------------------------------------------------
 
   ts-pixelfed-worker:
-    image: tailscale/tailscale:latest
+    image: tailscale/tailscale:${TAILSCALE_VERSION:-v1.98.4}
     hostname: ${PIXELFED_WORKER_MAGIC_NAME}
     environment:
       TS_AUTHKEY: ${TS_OAUTH_CLIENT_SECRET}?ephemeral=true
@@ -108,41 +168,23 @@ services:
       - NET_ADMIN
       - NET_RAW
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9002/healthz"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9002/healthz && nc -z -w3 ${DB_MAGIC_NAME}.${TS_TAILNET} 5432 && nc -z -w3 ${REDIS_MAGIC_NAME}.${TS_TAILNET} 6379"]
       interval: 10s
-      timeout: 5s
+      timeout: 15s
       retries: 6
       start_period: 30s
     restart: unless-stopped
 
   worker:
-    image: ghcr.io/pixelfed-glitch/pixelfed:fpm-${PIXELFED_VERSION}
+    image: ghcr.io/pixelfed-glitch/pixelfed:fpm-${PIXELFED_VERSION:-0.12.6-glitch.1.12.1}
     network_mode: "service:ts-pixelfed-worker"
     entrypoint: ["/usr/local/bin/ts-entrypoint.sh"]
     command: ["gosu", "www-data", "php", "artisan", "horizon"]
     stop_signal: SIGTERM
     environment:
-      TZ: "UTC"
+      <<: *pixelfed-env
       DOCKER_SERVICE_NAME: "worker"
       ENTRYPOINT_SKIP_SCRIPTS: "any"
-      APP_DOMAIN: ${PIXELFED_DOMAIN}
-      APP_KEY: ${PIXELFED_APP_KEY}
-      DB_HOST: ${DB_MAGIC_NAME}.${TS_TAILNET}
-      DB_PORT: "5432"
-      DB_DATABASE: ${PIXELFED_DB_NAME}
-      DB_USERNAME: ${PIXELFED_DB_USER}
-      DB_PASSWORD: ${PIXELFED_DB_PASSWORD}
-      REDIS_HOST: ${REDIS_MAGIC_NAME}.${TS_TAILNET}
-      REDIS_PORT: "6379"
-      ENFORCE_EMAIL_VERIFICATION: ${PIXELFED_ENFORCE_EMAIL_VERIFICATION:-false}
-      MAIL_MAILER: ${PIXELFED_MAIL_MAILER:-log}
-      MAIL_HOST: ${PIXELFED_SMTP_HOST:-}
-      MAIL_PORT: ${PIXELFED_SMTP_PORT:-587}
-      MAIL_USERNAME: ${PIXELFED_SMTP_USERNAME:-}
-      MAIL_PASSWORD: ${PIXELFED_SMTP_PASSWORD:-}
-      MAIL_ENCRYPTION: ${PIXELFED_SMTP_ENCRYPTION:-null}
-      MAIL_FROM_ADDRESS: ${PIXELFED_MAIL_FROM_ADDRESS:-pixelfed@${PIXELFED_DOMAIN}}
-      MAIL_FROM_NAME: ${PIXELFED_MAIL_FROM_NAME:-Pixelfed}
     volumes:
       - ./entrypoint-wrapper.sh:/usr/local/bin/ts-entrypoint.sh:ro
       - pixelfed-storage:/var/www/storage
@@ -161,33 +203,15 @@ services:
     restart: unless-stopped
 
   cron:
-    image: ghcr.io/pixelfed-glitch/pixelfed:fpm-${PIXELFED_VERSION}
+    image: ghcr.io/pixelfed-glitch/pixelfed:fpm-${PIXELFED_VERSION:-0.12.6-glitch.1.12.1}
     network_mode: "service:ts-pixelfed-worker"
     entrypoint: ["/usr/local/bin/ts-entrypoint.sh"]
     command: ["gosu", "www-data", "php", "artisan", "schedule:work"]
     stop_signal: SIGTERM
     environment:
-      TZ: "UTC"
+      <<: *pixelfed-env
       DOCKER_SERVICE_NAME: "cron"
       ENTRYPOINT_SKIP_SCRIPTS: "any"
-      APP_DOMAIN: ${PIXELFED_DOMAIN}
-      APP_KEY: ${PIXELFED_APP_KEY}
-      DB_HOST: ${DB_MAGIC_NAME}.${TS_TAILNET}
-      DB_PORT: "5432"
-      DB_DATABASE: ${PIXELFED_DB_NAME}
-      DB_USERNAME: ${PIXELFED_DB_USER}
-      DB_PASSWORD: ${PIXELFED_DB_PASSWORD}
-      REDIS_HOST: ${REDIS_MAGIC_NAME}.${TS_TAILNET}
-      REDIS_PORT: "6379"
-      ENFORCE_EMAIL_VERIFICATION: ${PIXELFED_ENFORCE_EMAIL_VERIFICATION:-false}
-      MAIL_MAILER: ${PIXELFED_MAIL_MAILER:-log}
-      MAIL_HOST: ${PIXELFED_SMTP_HOST:-}
-      MAIL_PORT: ${PIXELFED_SMTP_PORT:-587}
-      MAIL_USERNAME: ${PIXELFED_SMTP_USERNAME:-}
-      MAIL_PASSWORD: ${PIXELFED_SMTP_PASSWORD:-}
-      MAIL_ENCRYPTION: ${PIXELFED_SMTP_ENCRYPTION:-null}
-      MAIL_FROM_ADDRESS: ${PIXELFED_MAIL_FROM_ADDRESS:-pixelfed@${PIXELFED_DOMAIN}}
-      MAIL_FROM_NAME: ${PIXELFED_MAIL_FROM_NAME:-Pixelfed}
     volumes:
       - ./entrypoint-wrapper.sh:/usr/local/bin/ts-entrypoint.sh:ro
       - pixelfed-storage:/var/www/storage

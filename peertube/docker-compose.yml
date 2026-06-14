@@ -1,0 +1,150 @@
+# PeerTube — single container behind one Tailscale sidecar.
+#
+# PeerTube is a single Node process. HTTP (9000) and RTMP live ingest
+# (1935) both come from the same container, so a single sidecar covers
+# both. There is no separate worker tier; transcoding runs in-process.
+#
+# Bring up shared-db/ first. PeerTube needs Postgres AND Redis, plus
+# three Postgres extensions (pg_trgm, unaccent, uuid-ossp) which the
+# initdb script creates on a fresh pg-data volume. On an existing
+# volume, see README "Troubleshooting" for the manual CREATE EXTENSION
+# commands.
+#
+# OBJECT STORAGE (S3): off by default; videos live on the local
+# peertube-data volume. Flip PEERTUBE_OBJECT_STORAGE_ENABLED=true in
+# .env and fill the credential vars to send web_videos and
+# streaming_playlists to your bucket. /data is still needed for
+# transcoding scratch space even when S3 is on.
+#
+# LIVE STREAMING (RTMP): on by default, but the RTMP listener is only
+# reachable from the tailnet. To accept public ingest, see
+# nginx/sites-available/peertube-rtmp.conf for an nginx stream-module
+# reference snippet that proxies :1935 from the public internet.
+
+name: federated-peertube
+
+services:
+
+  ts-peertube-web:
+    image: tailscale/tailscale:${TAILSCALE_VERSION:-v1.98.4}
+    hostname: ${PEERTUBE_WEB_MAGIC_NAME}
+    environment:
+      TS_AUTHKEY: ${TS_OAUTH_CLIENT_SECRET}?ephemeral=true
+      TS_EXTRA_ARGS: --advertise-tags=tag:peertube-web
+      TS_HOSTNAME: ${PEERTUBE_WEB_MAGIC_NAME}
+      TS_ACCEPT_DNS: "true"
+      TS_AUTH_ONCE: "true"
+      TS_USERSPACE: "false"
+      TS_ENABLE_HEALTH_CHECK: "true"
+      TS_LOCAL_ADDR_PORT: "127.0.0.1:9002"
+    dns: [1.1.1.1, 1.0.0.1]
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9002/healthz && nc -z -w3 ${DB_MAGIC_NAME}.${TS_TAILNET} 5432 && nc -z -w3 ${REDIS_MAGIC_NAME}.${TS_TAILNET} 6379"]
+      interval: 10s
+      timeout: 15s
+      retries: 6
+      start_period: 30s
+    restart: unless-stopped
+
+  peertube:
+    image: chocobozzz/peertube:${PEERTUBE_VERSION:-production-bookworm}
+    network_mode: "service:ts-peertube-web"
+    environment:
+      # ---- Webserver ----
+      # WEBSERVER_HOSTNAME is the public hostname (no scheme, no slash).
+      # WEBSERVER_PORT 443 + WEBSERVER_HTTPS true tells PeerTube to emit
+      # https:// URLs in federation messages even though TLS is terminated
+      # upstream by the host nginx.
+      PEERTUBE_WEBSERVER_HOSTNAME: ${PEERTUBE_DOMAIN}
+      PEERTUBE_WEBSERVER_PORT: "443"
+      PEERTUBE_WEBSERVER_HTTPS: "true"
+      # Tailscale CGNAT range — so PeerTube reads the real client IP from
+      # X-Forwarded-For instead of the tailnet hop address.
+      PEERTUBE_TRUST_PROXY: '["loopback", "linklocal", "uniquelocal", "100.64.0.0/10"]'
+
+      # ---- Database ----
+      # Inline MagicDNS — see the "Compose variable nesting" pitfall in
+      # CLAUDE.md.
+      PEERTUBE_DB_HOSTNAME: ${DB_MAGIC_NAME}.${TS_TAILNET}
+      PEERTUBE_DB_PORT: "5432"
+      PEERTUBE_DB_USERNAME: ${PEERTUBE_DB_USER}
+      PEERTUBE_DB_PASSWORD: ${PEERTUBE_DB_PASSWORD}
+      # By default PeerTube appends "_prod" to the db name. Setting suffix
+      # to empty makes it use PEERTUBE_DB_NAME as-is, matching what the
+      # initdb script created.
+      PEERTUBE_DB_NAME: ${PEERTUBE_DB_NAME}
+      PEERTUBE_DB_SUFFIX: ""
+
+      # ---- Redis ----
+      PEERTUBE_REDIS_HOSTNAME: ${REDIS_MAGIC_NAME}.${TS_TAILNET}
+      PEERTUBE_REDIS_PORT: "6379"
+
+      # ---- Admin + secrets ----
+      PEERTUBE_ADMIN_EMAIL: ${PEERTUBE_ADMIN_EMAIL}
+      PEERTUBE_SECRET: ${PEERTUBE_SECRET}
+
+      # ---- SMTP (optional but recommended) ----
+      # Host/port/user/password come from the shared SMTP_* relay in .env;
+      # only the sender address is PeerTube-specific.
+      PEERTUBE_SMTP_HOSTNAME: ${SMTP_HOST}
+      PEERTUBE_SMTP_PORT: ${SMTP_PORT}
+      PEERTUBE_SMTP_USERNAME: ${SMTP_USER}
+      PEERTUBE_SMTP_PASSWORD: ${SMTP_PASSWORD}
+      PEERTUBE_SMTP_FROM: ${PEERTUBE_SMTP_FROM}
+      # TLS=false + STARTTLS is correct for port 587 (the shared default).
+      # For implicit-TLS relays on port 465, set PEERTUBE_SMTP_TLS=true in .env.
+      PEERTUBE_SMTP_TLS: ${PEERTUBE_SMTP_TLS:-false}
+
+      # ---- Live streaming (RTMP) ----
+      # Bound to 0.0.0.0 inside the sidecar netns. The netns only has lo
+      # and tailscale0 — there is no host or bridge interface to leak onto.
+      # Public ingest requires an explicit nginx stream-proxy (see
+      # nginx/sites-available/peertube-rtmp.conf).
+      PEERTUBE_LIVE_ENABLED: "true"
+      PEERTUBE_LIVE_RTMP_ENABLED: "true"
+      PEERTUBE_LIVE_RTMP_PORT: "1935"
+      PEERTUBE_LIVE_RTMP_HOSTNAME: "0.0.0.0"
+
+      # ---- Object storage (S3) — opt in ----
+      # All values default to empty/false. To enable, set
+      # PEERTUBE_OBJECT_STORAGE_ENABLED=true in .env and fill the rest.
+      PEERTUBE_OBJECT_STORAGE_ENABLED: ${PEERTUBE_OBJECT_STORAGE_ENABLED:-false}
+      # Inline MagicDNS — Compose does not expand vars inside vars.
+      PEERTUBE_OBJECT_STORAGE_ENDPOINT: http://${GARAGE_MAGIC_NAME}.${TS_TAILNET}:3900
+      PEERTUBE_OBJECT_STORAGE_REGION: ${PEERTUBE_OBJECT_STORAGE_REGION:-us-east-1}
+      PEERTUBE_OBJECT_STORAGE_UPLOAD_ACL_PUBLIC: ${PEERTUBE_OBJECT_STORAGE_UPLOAD_ACL_PUBLIC:-public-read}
+      PEERTUBE_OBJECT_STORAGE_UPLOAD_ACL_PRIVATE: ${PEERTUBE_OBJECT_STORAGE_UPLOAD_ACL_PRIVATE:-private}
+      # Credentials from the shared Garage key. To use a different S3 provider,
+      # set GARAGE_ACCESS_KEY_ID / GARAGE_SECRET_ACCESS_KEY to that provider's
+      # credentials, or edit these lines directly.
+      PEERTUBE_OBJECT_STORAGE_CREDENTIALS_ACCESS_KEY_ID: ${GARAGE_ACCESS_KEY_ID:-}
+      PEERTUBE_OBJECT_STORAGE_CREDENTIALS_SECRET_ACCESS_KEY: ${GARAGE_SECRET_ACCESS_KEY:-}
+      PEERTUBE_OBJECT_STORAGE_WEB_VIDEOS_BUCKET_NAME: ${PEERTUBE_OBJECT_STORAGE_WEB_VIDEOS_BUCKET:-}
+      PEERTUBE_OBJECT_STORAGE_WEB_VIDEOS_PREFIX: ${PEERTUBE_OBJECT_STORAGE_WEB_VIDEOS_PREFIX:-}
+      PEERTUBE_OBJECT_STORAGE_WEB_VIDEOS_BASE_URL: ${PEERTUBE_OBJECT_STORAGE_WEB_VIDEOS_BASE_URL:-}
+      PEERTUBE_OBJECT_STORAGE_STREAMING_PLAYLISTS_BUCKET_NAME: ${PEERTUBE_OBJECT_STORAGE_STREAMING_PLAYLISTS_BUCKET:-}
+      PEERTUBE_OBJECT_STORAGE_STREAMING_PLAYLISTS_PREFIX: ${PEERTUBE_OBJECT_STORAGE_STREAMING_PLAYLISTS_PREFIX:-}
+      PEERTUBE_OBJECT_STORAGE_STREAMING_PLAYLISTS_BASE_URL: ${PEERTUBE_OBJECT_STORAGE_STREAMING_PLAYLISTS_BASE_URL:-}
+    volumes:
+      - peertube-config:/config
+      - peertube-data:/data
+    healthcheck:
+      # /api/v1/ping returns "pong" once the app is up.
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9000/api/v1/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    depends_on:
+      ts-peertube-web:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  peertube-config:
+  peertube-data:

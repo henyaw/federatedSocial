@@ -67,9 +67,27 @@
     "tag:funkwhale-web":         ["autogroup:admin", "tag:funkwhale-web"],
     "tag:funkwhale-worker":      ["autogroup:admin", "tag:funkwhale-worker"],
 
-    // Future stacks — uncomment when you bring them up. Remember to add
-    // the self-ownership entry in the same pattern.
-    // "tag:bluesky-pds":       ["autogroup:admin", "tag:bluesky-pds"],
+    // GoToSocial (single container — no separate worker tier)
+    "tag:gotosocial-web":        ["autogroup:admin", "tag:gotosocial-web"],
+
+    // PeerTube (single container; serves both HTTP and RTMP from one sidecar)
+    "tag:peertube-web":          ["autogroup:admin", "tag:peertube-web"],
+
+    // Garage — shared S3-compatible object storage
+    "tag:garage":                ["autogroup:admin", "tag:garage"],
+
+    // Stalwart mail server (SMTP, IMAP, JMAP/admin)
+    "tag:stalwart":              ["autogroup:admin", "tag:stalwart"],
+
+    // Authelia SSO / OIDC provider
+    "tag:authelia":              ["autogroup:admin", "tag:authelia"],
+
+    // Lemmy — federated link aggregator
+    "tag:lemmy-web":             ["autogroup:admin", "tag:lemmy-web"],
+
+    // Optional: tag your streaming/broadcast machines so they can publish
+    // RTMP to PeerTube without going through a public ingest proxy.
+    // "tag:streamer":          ["autogroup:admin", "tag:streamer"],
   },
 
   "grants": [
@@ -81,23 +99,58 @@
         "tag:mastodon-web", "tag:mastodon-streaming", "tag:mastodon-sidekiq",
         "tag:diaspora-web",
         "tag:funkwhale-web", "tag:funkwhale-worker",
-        // "tag:bluesky-pds",
+        "tag:gotosocial-web",
+        "tag:peertube-web",
+        "tag:stalwart",
+        "tag:authelia",
+        "tag:lemmy-web",
       ],
       "dst": ["tag:db-postgres"],
       "ip":  ["tcp:5432"],
     },
 
     // App tiers reach shared Redis on TCP/6379 only.
+    // GoToSocial is intentionally omitted — it has no Redis dependency.
+    // Stalwart is intentionally omitted — it uses Garage not Redis.
+    // Lemmy is intentionally omitted — it uses Postgres only.
     {
       "src": [
         "tag:pixelfed-web", "tag:pixelfed-worker",
         "tag:mastodon-web", "tag:mastodon-streaming", "tag:mastodon-sidekiq",
         "tag:diaspora-web",
         "tag:funkwhale-web", "tag:funkwhale-worker",
-        // "tag:bluesky-pds",
+        "tag:peertube-web",
+        "tag:authelia",
       ],
       "dst": ["tag:db-redis"],
       "ip":  ["tcp:6379"],
+    },
+
+    // Stalwart mail server — reached by the L4 edge on all mail ports plus
+    // HTTPS for MTA-STS/autoconfig/autodiscover pass-through, and by the
+    // reverse proxy on JMAP/admin port 8080.
+    {
+      "src": ["tag:reverse-proxy"],
+      "dst": ["tag:stalwart"],
+      "ip":  ["tcp:25", "tcp:465", "tcp:587", "tcp:143", "tcp:993", "tcp:443", "tcp:8080"],
+    },
+
+    // Authelia SSO portal — reached by the reverse proxy on TCP/9091, and by
+    // app tiers that use OIDC (GTS, Mastodon, Funkwhale, PeerTube).
+    {
+      "src": ["tag:reverse-proxy"],
+      "dst": ["tag:authelia"],
+      "ip":  ["tcp:9091"],
+    },
+    {
+      "src": [
+        "tag:gotosocial-web",
+        "tag:mastodon-web",
+        "tag:funkwhale-web",
+        "tag:peertube-web",
+      ],
+      "dst": ["tag:authelia"],
+      "ip":  ["tcp:9091"],
     },
 
     // Host reverse proxy reaches each public-facing app web tier on the
@@ -125,7 +178,66 @@
       "dst": ["tag:funkwhale-web"],
       "ip":  ["tcp:80"],
     },
-    // "tag:bluesky-pds" reverse-proxy grant goes here when you add that stack.
+    {
+      "src": ["tag:reverse-proxy"],
+      "dst": ["tag:gotosocial-web"],
+      "ip":  ["tcp:8080"],
+    },
+    {
+      "src": ["tag:reverse-proxy"],
+      "dst": ["tag:peertube-web"],
+      "ip":  ["tcp:9000"],
+    },
+
+    // PeerTube RTMP live ingest. By default, only the host nginx (which
+    // can stream-proxy public :1935 to here) and admins reach the RTMP
+    // listener. Uncomment the streamer block to let tagged streaming
+    // boxes publish directly over the tailnet without a public proxy.
+    {
+      "src": ["tag:reverse-proxy"],
+      "dst": ["tag:peertube-web"],
+      "ip":  ["tcp:1935"],
+    },
+    // {
+    //   "src": ["tag:streamer"],
+    //   "dst": ["tag:peertube-web"],
+    //   "ip":  ["tcp:1935"],
+    // },
+
+    // Lemmy — reverse proxy reaches the internal nginx aggregator on port 80.
+    {
+      "src": ["tag:reverse-proxy"],
+      "dst": ["tag:lemmy-web"],
+      "ip":  ["tcp:80"],
+    },
+
+    // App tiers reach Garage S3 API on TCP/3900.
+    // Add new app tags here when you bring them up.
+    {
+      "src": [
+        "tag:pixelfed-web", "tag:pixelfed-worker",
+        "tag:mastodon-web", "tag:mastodon-streaming", "tag:mastodon-sidekiq",
+        "tag:diaspora-web",
+        "tag:funkwhale-web", "tag:funkwhale-worker",
+        "tag:gotosocial-web",
+        "tag:peertube-web",
+        "tag:stalwart",
+        "tag:db-postgres",  // shared-db pg-backup service uses Garage too
+      ],
+      "dst": ["tag:garage"],
+      "ip":  ["tcp:3900"],
+    },
+
+    // Host reverse proxy reaches Garage web endpoint (TCP/3902) to serve
+    // public media. Port 3902 is the [s3_web] endpoint in garage.toml —
+    // it serves anonymous reads from website-enabled buckets. Separate from
+    // the S3 API (3900) which requires signed requests and is not for
+    // public browsers.
+    {
+      "src": ["tag:reverse-proxy"],
+      "dst": ["tag:garage"],
+      "ip":  ["tcp:3902"],
+    },
 
     // Admins (you, on your laptop) reach everything for debugging.
     {
@@ -146,7 +258,10 @@
   //     "dst":    ["tag:db-postgres", "tag:db-redis",
   //                "tag:pixelfed-web", "tag:pixelfed-worker",
   //                "tag:mastodon-web", "tag:mastodon-streaming", "tag:mastodon-sidekiq",
-  //                "tag:diaspora-web"],
+  //                "tag:diaspora-web",
+  //                "tag:funkwhale-web", "tag:funkwhale-worker",
+  //                "tag:gotosocial-web",
+  //                "tag:peertube-web"],
   //     "users":  ["root", "autogroup:nonroot"],
   //   },
   // ],
