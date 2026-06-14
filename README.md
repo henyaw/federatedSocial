@@ -203,6 +203,14 @@ This stack is intentionally opinionated. It assumes you'd rather have something 
 
 The goal is for operators to spend their time running a community, not running infrastructure.
 
+## Acknowledgements
+
+Pixelfed support in this stack is **proudly built on [Pixelfed Glitch](https://pixelfed-glitch.github.io/docs)** — a community-maintained fork of [Pixelfed](https://pixelfed.org). The pinned container images this repo deploys come from their project; the version is set via `PIXELFED_VERSION` in `.env`.
+
+- 🌐 **Website** — <https://pixelfed-glitch.github.io/docs>
+- 📖 **Documentation** — <https://pixelfed-glitch.github.io/docs/running-pixelfed/>
+- 💻 **Repository** — <https://github.com/pixelfed-glitch/pixelfed>
+
 ## License
 
 See `LICENSE` in the repo root.
