@@ -62,6 +62,14 @@ services:
       REDIS_HOST: ${REDIS_MAGIC_NAME}.${TS_TAILNET}
       REDIS_PORT: "6379"
       ENFORCE_EMAIL_VERIFICATION: ${PIXELFED_ENFORCE_EMAIL_VERIFICATION:-false}
+      MAIL_MAILER: ${PIXELFED_MAIL_MAILER:-log}
+      MAIL_HOST: ${PIXELFED_SMTP_HOST:-}
+      MAIL_PORT: ${PIXELFED_SMTP_PORT:-587}
+      MAIL_USERNAME: ${PIXELFED_SMTP_USERNAME:-}
+      MAIL_PASSWORD: ${PIXELFED_SMTP_PASSWORD:-}
+      MAIL_ENCRYPTION: ${PIXELFED_SMTP_ENCRYPTION:-null}
+      MAIL_FROM_ADDRESS: ${PIXELFED_MAIL_FROM_ADDRESS:-pixelfed@${PIXELFED_DOMAIN}}
+      MAIL_FROM_NAME: ${PIXELFED_MAIL_FROM_NAME:-Pixelfed}
     volumes:
       - ./entrypoint-wrapper.sh:/usr/local/bin/ts-entrypoint.sh:ro
       - pixelfed-storage:/var/www/storage
@@ -127,6 +135,14 @@ services:
       REDIS_HOST: ${REDIS_MAGIC_NAME}.${TS_TAILNET}
       REDIS_PORT: "6379"
       ENFORCE_EMAIL_VERIFICATION: ${PIXELFED_ENFORCE_EMAIL_VERIFICATION:-false}
+      MAIL_MAILER: ${PIXELFED_MAIL_MAILER:-log}
+      MAIL_HOST: ${PIXELFED_SMTP_HOST:-}
+      MAIL_PORT: ${PIXELFED_SMTP_PORT:-587}
+      MAIL_USERNAME: ${PIXELFED_SMTP_USERNAME:-}
+      MAIL_PASSWORD: ${PIXELFED_SMTP_PASSWORD:-}
+      MAIL_ENCRYPTION: ${PIXELFED_SMTP_ENCRYPTION:-null}
+      MAIL_FROM_ADDRESS: ${PIXELFED_MAIL_FROM_ADDRESS:-pixelfed@${PIXELFED_DOMAIN}}
+      MAIL_FROM_NAME: ${PIXELFED_MAIL_FROM_NAME:-Pixelfed}
     volumes:
       - ./entrypoint-wrapper.sh:/usr/local/bin/ts-entrypoint.sh:ro
       - pixelfed-storage:/var/www/storage
@@ -164,6 +180,14 @@ services:
       REDIS_HOST: ${REDIS_MAGIC_NAME}.${TS_TAILNET}
       REDIS_PORT: "6379"
       ENFORCE_EMAIL_VERIFICATION: ${PIXELFED_ENFORCE_EMAIL_VERIFICATION:-false}
+      MAIL_MAILER: ${PIXELFED_MAIL_MAILER:-log}
+      MAIL_HOST: ${PIXELFED_SMTP_HOST:-}
+      MAIL_PORT: ${PIXELFED_SMTP_PORT:-587}
+      MAIL_USERNAME: ${PIXELFED_SMTP_USERNAME:-}
+      MAIL_PASSWORD: ${PIXELFED_SMTP_PASSWORD:-}
+      MAIL_ENCRYPTION: ${PIXELFED_SMTP_ENCRYPTION:-null}
+      MAIL_FROM_ADDRESS: ${PIXELFED_MAIL_FROM_ADDRESS:-pixelfed@${PIXELFED_DOMAIN}}
+      MAIL_FROM_NAME: ${PIXELFED_MAIL_FROM_NAME:-Pixelfed}
     volumes:
       - ./entrypoint-wrapper.sh:/usr/local/bin/ts-entrypoint.sh:ro
       - pixelfed-storage:/var/www/storage
