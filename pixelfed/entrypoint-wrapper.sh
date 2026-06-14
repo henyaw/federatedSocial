@@ -10,6 +10,11 @@
 # as Laravel config and would either pick up wrong values or warn loudly.
 # Generating a clean per-app .env here keeps the root .env as the single
 # operator surface without leaking other apps' settings into Pixelfed.
+#
+# NOTE: variables expanded in the heredoc below must not contain $, \, `,
+# or ! characters — those are interpreted by the shell. Passwords generated
+# with openssl rand -hex 32 or -base64 32 are safe; arbitrary passphrases
+# may not be.
 
 set -eu
 
@@ -25,14 +30,17 @@ set -eu
 : "${REDIS_HOST:?REDIS_HOST must be set}"
 
 cat > /var/www/.env <<EOF
-APP_NAME="Pixelfed"
+APP_NAME="${APP_NAME:-Pixelfed}"
 APP_ENV=production
 APP_DEBUG=false
 APP_URL=https://${APP_DOMAIN}
 APP_DOMAIN=${APP_DOMAIN}
-ADMIN_DOMAIN=${APP_DOMAIN}
+ADMIN_DOMAIN=${ADMIN_DOMAIN:-${APP_DOMAIN}}
 SESSION_DOMAIN=${APP_DOMAIN}
 APP_KEY=${APP_KEY}
+APP_TIMEZONE=${APP_TIMEZONE:-UTC}
+APP_LOCALE=${APP_LOCALE:-en}
+APP_FALLBACK_LOCALE=${APP_FALLBACK_LOCALE:-en}
 
 # Reverse proxy — host Nginx terminates TLS and proxies in over the tailnet,
 # so Pixelfed must trust the forwarded proto/host to build https:// URLs and
@@ -60,9 +68,16 @@ QUEUE_DRIVER=redis
 SESSION_DRIVER=redis
 HORIZON_PREFIX=horizon-
 
-ENFORCE_EMAIL_VERIFICATION=${ENFORCE_EMAIL_VERIFICATION:-false}
-PF_ENABLE_CLOUD=false
+# Instance identity
+INSTANCE_DESCRIPTION="${INSTANCE_DESCRIPTION:-}"
 INSTANCE_CONTACT_EMAIL=${INSTANCE_CONTACT_EMAIL:-admin@${APP_DOMAIN}}
+INSTANCE_CONTACT_FORM=${INSTANCE_CONTACT_FORM:-false}
+TRUST_PROXIES=${TRUST_PROXIES:-100.64.0.0/10}
+
+# Registration
+OPEN_REGISTRATION=${OPEN_REGISTRATION:-false}
+ENFORCE_EMAIL_VERIFICATION=${ENFORCE_EMAIL_VERIFICATION:-false}
+INSTANCE_CUR_REG=${INSTANCE_CUR_REG:-false}
 
 # API / OAuth — required for the Pixelfed mobile apps and third-party clients.
 OAUTH_ENABLED=true
@@ -81,11 +96,46 @@ MAIL_FROM_ADDRESS=${MAIL_FROM_ADDRESS:-pixelfed@${APP_DOMAIN}}
 MAIL_FROM_NAME="${MAIL_FROM_NAME:-Pixelfed}"
 
 # Federation
-ACTIVITY_PUB=true
-AP_REMOTE_FOLLOW=true
-AP_INBOX=true
-AP_OUTBOX=true
-AP_SHAREDINBOX=true
+ACTIVITY_PUB=${ACTIVITY_PUB:-true}
+AP_REMOTE_FOLLOW=${AP_REMOTE_FOLLOW:-true}
+AP_SHAREDINBOX=${AP_SHAREDINBOX:-true}
+AP_INBOX=${AP_INBOX:-true}
+AP_OUTBOX=${AP_OUTBOX:-true}
+ATOM_FEEDS=${ATOM_FEEDS:-true}
+NODEINFO=${NODEINFO:-true}
+WEBFINGER=${WEBFINGER:-true}
+
+# Moderation
+INSTANCE_REPORTS_EMAIL_ENABLED=${INSTANCE_REPORTS_EMAIL_ENABLED:-false}
+INSTANCE_REPORTS_EMAIL_ADDRESSES=${INSTANCE_REPORTS_EMAIL_ADDRESSES:-}
+INSTANCE_REPORTS_EMAIL_AUTOSPAM=${INSTANCE_REPORTS_EMAIL_AUTOSPAM:-false}
+
+# Content
+STORIES_ENABLED=${STORIES_ENABLED:-false}
+PF_HIDE_NSFW_ON_PUBLIC_FEEDS=${PF_HIDE_NSFW_ON_PUBLIC_FEEDS:-false}
+
+# Email
+MAIL_DRIVER=${MAIL_DRIVER:-log}
+MAIL_HOST=${MAIL_HOST:-}
+MAIL_PORT=${MAIL_PORT:-587}
+MAIL_USERNAME=${MAIL_USERNAME:-}
+MAIL_PASSWORD=${MAIL_PASSWORD:-}
+MAIL_ENCRYPTION=${MAIL_ENCRYPTION:-tls}
+MAIL_FROM_ADDRESS=${MAIL_FROM_ADDRESS:-noreply@${APP_DOMAIN}}
+MAIL_FROM_NAME="${MAIL_FROM_NAME:-Pixelfed}"
+
+# Object storage (S3)
+PF_ENABLE_CLOUD=${PF_ENABLE_CLOUD:-false}
+FILESYSTEM_CLOUD=${FILESYSTEM_CLOUD:-s3}
+PF_LOCAL_AVATAR_TO_CLOUD=${PF_LOCAL_AVATAR_TO_CLOUD:-false}
+MEDIA_DELETE_LOCAL_AFTER_CLOUD=${MEDIA_DELETE_LOCAL_AFTER_CLOUD:-false}
+AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-}
+AWS_BUCKET=${AWS_BUCKET:-}
+AWS_ENDPOINT=${AWS_ENDPOINT:-}
+AWS_USE_PATH_STYLE_ENDPOINT=${AWS_USE_PATH_STYLE_ENDPOINT:-false}
+AWS_URL=${AWS_URL:-}
 
 # Logging
 LOG_CHANNEL=stderr

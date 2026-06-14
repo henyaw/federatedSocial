@@ -59,7 +59,7 @@ services:
   # -------------------------------------------------------------------
 
   ts-funkwhale-web:
-    image: tailscale/tailscale:latest
+    image: tailscale/tailscale:${TAILSCALE_VERSION:-v1.98.4}
     hostname: ${FUNKWHALE_WEB_MAGIC_NAME}
     environment:
       TS_AUTHKEY: ${TS_OAUTH_CLIENT_SECRET}?ephemeral=true
@@ -77,9 +77,9 @@ services:
       - NET_ADMIN
       - NET_RAW
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9002/healthz"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9002/healthz && nc -z -w3 ${DB_MAGIC_NAME}.${TS_TAILNET} 5432 && nc -z -w3 ${REDIS_MAGIC_NAME}.${TS_TAILNET} 6379"]
       interval: 10s
-      timeout: 5s
+      timeout: 15s
       retries: 6
       start_period: 30s
     restart: unless-stopped
@@ -150,7 +150,7 @@ services:
   # -------------------------------------------------------------------
 
   ts-funkwhale-worker:
-    image: tailscale/tailscale:latest
+    image: tailscale/tailscale:${TAILSCALE_VERSION:-v1.98.4}
     hostname: ${FUNKWHALE_WORKER_MAGIC_NAME}
     environment:
       TS_AUTHKEY: ${TS_OAUTH_CLIENT_SECRET}?ephemeral=true
@@ -168,9 +168,9 @@ services:
       - NET_ADMIN
       - NET_RAW
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9002/healthz"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9002/healthz && nc -z -w3 ${DB_MAGIC_NAME}.${TS_TAILNET} 5432 && nc -z -w3 ${REDIS_MAGIC_NAME}.${TS_TAILNET} 6379"]
       interval: 10s
-      timeout: 5s
+      timeout: 15s
       retries: 6
       start_period: 30s
     restart: unless-stopped

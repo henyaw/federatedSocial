@@ -1,0 +1,83 @@
+{
+  "//": "Layer-4 mail edge for Stalwart. Pipes raw TCP mail ports to the",
+  "//2": "Stalwart sidecar over the tailnet, preserving client IP via PROXY",
+  "//3": "protocol v2. One server per port (upstream port differs per listener).",
+  "//4": "Stalwart terminates TLS itself — this is pure pass-through.",
+  "//5": "This file is a template. docker-compose.yml runs envsubst on it at",
+  "//6": "startup to produce /tmp/caddy.json with real values. Variables:",
+  "//7": "  $STALWART_MAGIC_NAME, $STALWART_DOMAIN, $TS_TAILNET",
+  "apps": {
+    "layer4": {
+      "servers": {
+        "smtp": {
+          "listen": [":25"],
+          "routes": [{ "handle": [{
+            "handler": "proxy",
+            "proxy_protocol": "v2",
+            "upstreams": [{ "dial": ["$STALWART_MAGIC_NAME.$TS_TAILNET:25"] }]
+          }]}]
+        },
+        "submissions": {
+          "listen": [":465"],
+          "routes": [{ "handle": [{
+            "handler": "proxy",
+            "proxy_protocol": "v2",
+            "upstreams": [{ "dial": ["$STALWART_MAGIC_NAME.$TS_TAILNET:465"] }]
+          }]}]
+        },
+        "submission": {
+          "listen": [":587"],
+          "routes": [{ "handle": [{
+            "handler": "proxy",
+            "proxy_protocol": "v2",
+            "upstreams": [{ "dial": ["$STALWART_MAGIC_NAME.$TS_TAILNET:587"] }]
+          }]}]
+        },
+        "imap": {
+          "listen": [":143"],
+          "routes": [{ "handle": [{
+            "handler": "proxy",
+            "proxy_protocol": "v2",
+            "upstreams": [{ "dial": ["$STALWART_MAGIC_NAME.$TS_TAILNET:143"] }]
+          }]}]
+        },
+        "imaptls": {
+          "listen": [":993"],
+          "routes": [{ "handle": [{
+            "handler": "proxy",
+            "proxy_protocol": "v2",
+            "upstreams": [{ "dial": ["$STALWART_MAGIC_NAME.$TS_TAILNET:993"] }]
+          }]}]
+        },
+        "web": {
+          "//": "SNI fan-out on the public :443. Stalwart's HTTPS web endpoints",
+          "//2": "(MTA-STS policy, autoconfig, autodiscover) pass through to Stalwart,",
+          "//3": "which terminates TLS with its wildcard cert — NO proxy_protocol here.",
+          "//4": "Every other SNI falls to the box's own web Caddy on :8443.",
+          "//5": "Set https_port 8443 in that Caddy's global options block.",
+          "//6": "A mail-only edge (no web vhosts on this box) omits this server.",
+          "listen": [":443"],
+          "routes": [
+            {
+              "match": [{ "tls": { "sni": [
+                "mta-sts.$STALWART_DOMAIN",
+                "autoconfig.$STALWART_DOMAIN",
+                "autodiscover.$STALWART_DOMAIN"
+              ] } }],
+              "handle": [{
+                "handler": "proxy",
+                "upstreams": [{ "dial": ["$STALWART_MAGIC_NAME.$TS_TAILNET:443"] }]
+              }]
+            },
+            {
+              "handle": [{
+                "handler": "proxy",
+                "upstreams": [{ "dial": ["127.0.0.1:8443"] }]
+              }]
+            }
+          ]
+        }
+      }
+    }
+  }
+}

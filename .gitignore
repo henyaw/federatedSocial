@@ -1,13 +1,41 @@
 # Operator's real configuration — never commit
 .env
 
-# Per-subdir .env symlinks (operator creates these to point at root .env)
+# Per-subdir .env symlinks (bootstrap.sh creates these automatically on 'up').
+# Gitignored so they are never accidentally committed.
 shared-db/.env
+garage/.env
 pixelfed/.env
 mastodon/.env
 diaspora/.env
 funkwhale/.env
-bluesky/.env
+gotosocial/.env
+peertube/.env
+stalwart/.env
+authelia/.env
+lemmy/.env
+
+# Generated at runtime by bootstrap.sh — rebuilt on every 'up'.
+# Edit garage/garage.toml (the tracked template), not this file.
+garage/garage.runtime.toml
+
+# Generated at runtime by bootstrap.sh — rebuilt on every 'up stalwart'.
+# Edit stalwart/config/config.json (the tracked template), not this file.
+stalwart/config/config.runtime.json
+
+# Generated at runtime by bootstrap.sh — rebuilt on every 'up authelia'.
+# Edit authelia/configuration.yml (the tracked template), not this file.
+authelia/configuration.runtime.yml
+
+# Generated at runtime by bootstrap.sh — rebuilt on every 'up lemmy'.
+# Edit lemmy/lemmy.hjson (the tracked template), not this file.
+lemmy/lemmy.runtime.hjson
+
+# Operator-generated secrets — never commit.
+authelia/private.pem
+# Operator-managed user database with hashed passwords — gitignored so
+# 'git pull' never overwrites a live user list.
+authelia/users.yml
 
 # Editor backups
 *.swp
