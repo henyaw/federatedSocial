@@ -35,7 +35,23 @@
 # ---------------------------------------------------------------------------
 # Pixelfed's container nginx listens on port 80 inside its sidecar netns,
 # reachable via MagicDNS over the tailnet.
+#
+# Host header, X-Forwarded-* and request streaming are Caddy defaults and are
+# what make TRUST_PROXIES=* inside the app behave (it sees https + real client
+# IP). The directives below add what Caddy does NOT do by default:
+#   - encode:        compress API/ActivityPub/HTML responses.
+#   - HSTS:          Caddy auto-provisions TLS but adds no HSTS header.
+#   - request_body:  Caddy has no default body limit; cap it so a public
+#                    endpoint can't be flooded with an arbitrarily large POST.
+#                    32MB is ~2x Pixelfed's default per-file MAX_PHOTO_SIZE
+#                    (~15MB; the composer uploads one file per request). If you
+#                    raise MAX_PHOTO_SIZE in .env, raise this to match.
 pixelfed.example.com {
+  encode zstd gzip
+  header Strict-Transport-Security "max-age=31536000"
+  request_body {
+    max_size 32MB
+  }
   reverse_proxy pixelfed.tailfe8c.ts.net:80
 }
 
