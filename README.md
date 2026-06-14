@@ -244,6 +244,16 @@ Reload your reverse proxy and visit your domain. You should see the app.
 
 All three share the one `GARAGE_ACCESS_KEY_ID` / `GARAGE_SECRET_ACCESS_KEY` pair from `provision-garage`. Buckets are created for you (`mastodon-media`, `pixelfed-media`, `peertube-web-videos`, `peertube-streaming-playlists`, `funkwhale-music`, plus `pg-backups` for database dumps).
 
+**Serving media to the public — you need a media host.** Enabling S3 changes where an app *stores* media, not how browsers *fetch* it. With cloud storage on, apps embed object URLs that point at Garage's tailnet address — specifically its **S3 API port `3900`, which only answers *signed* requests** (an anonymous browser GET gets `403 "does not support anonymous access"`). Public clients can neither reach the tailnet nor sign requests, so media silently fails to load even though uploads succeed. The fix is a small public reverse-proxy vhost that forwards to Garage's **web endpoint (`3902`)** and **rewrites the `Host` header to the bucket's web vhost** (`<bucket>.web.garage.local`) — and must *not* rewrite the path. Reference configs: **`nginx/sites-available/garage-media.conf`** and the Caddy equivalent in `caddy/Caddyfile`. Then point each app at its media domain:
+
+| App | Public-media var | Notes |
+|-----|------------------|-------|
+| Pixelfed | `PIXELFED_S3_URL=https://media.example.com` | full URL, with scheme |
+| Mastodon | `MASTODON_S3_ALIAS_HOST=mastodon-media.example.com` | host only, no scheme |
+| GoToSocial | `GOTOSOCIAL_S3_REDIRECT_URL=https://gts-media.example.com` | requires `GOTOSOCIAL_S3_PROXY=false` |
+
+Each media domain maps to **exactly one bucket**, so give every app its **own** hostname (its own public DNS record + TLS cert). PeerTube is the exception — it builds public object URLs from its own `PEERTUBE_OBJECT_STORAGE_*` settings; see its `.env` block. Skip this step and you get a working upload but broken images: wrong port (3900 instead of 3902), no proxy, and a lost afternoon tracing it.
+
 **Single node vs. cluster.** Garage starts single-node (`replication_factor = 1` in `garage/garage.toml`). To add a second node on another server: bring it up with the same `GARAGE_RPC_SECRET`, add its tailnet address to `rpc_bootstrap_peers`, raise the replication factor, and re-run `provision-garage`. Two servers in two countries is exactly Garage's intended topology.
 
 **Want to use an external bucket instead?** Point an app's endpoint at your provider (Backblaze B2, Wasabi, Scaleway, AWS) rather than Garage. PeerTube's `.env` section documents the per-field overrides; the same pattern applies to the others.
