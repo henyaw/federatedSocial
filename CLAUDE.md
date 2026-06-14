@@ -97,6 +97,17 @@ MASTODON_DOMAIN=
 
 When adding a new app or component, add its env vars to `.env.example` with sensible defaults or empty placeholders, and document any non-obvious value in a comment.
 
+### Shared infrastructure credentials
+
+Two cross-cutting concerns are configured **once** and mapped into every app, rather than per-app:
+
+- **SMTP relay**: `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD` / `SMTP_FROM_NAME`. Each app's compose maps these into the app-specific names it expects (Mastodon `SMTP_SERVER`, GoToSocial `GTS_SMTP_HOST`, PeerTube `PEERTUBE_SMTP_HOSTNAME`, Pixelfed `MAIL_HOST`, Diaspora `CONFIGURATION_MAIL_SMTP_HOST`). Funkwhale is the exception — it takes a single `EMAIL_CONFIG` connection string, so it can't read the discrete vars; document the `smtp+tls://` form with the URL-encoding caveat instead.
+- **Garage S3**: `GARAGE_ACCESS_KEY_ID` / `GARAGE_SECRET_ACCESS_KEY` / `GARAGE_REGION`, mapped into each app's S3 opt-in block.
+
+Per-app values that legitimately differ (sender addresses, bucket names, enable toggles) stay in the app's own section. When adding a new app, wire its SMTP and S3 to the shared vars; only add a new per-app var when the value genuinely can't be shared.
+
+**Compose can't nest variable defaults** (`${A:-${B}}` is unreliable — see the pitfalls section), so you can't do "per-app override falling back to shared." Map the shared var directly; if an operator needs a different relay for one app, they edit that compose file.
+
 ## Sidecar boilerplate
 
 Every Tailscale sidecar service uses this skeleton. Deviations need a stated reason.
@@ -270,6 +281,16 @@ Compose `depends_on` cannot enforce this across separate compose files. The heal
 6. Update `README.md` operator instructions.
 7. Verify: no `ports:` directives, every sidecar has `TS_ACCEPT_DNS: "true"`, every app has `depends_on: condition: service_healthy`, all hostnames use `${VAR}.${TS_TAILNET}` form.
 
+### Pitfalls learned the hard way
+
+- **Compose does not expand variables inside other variables.** Writing `MY_HOST=${DB_MAGIC_NAME}.${TS_TAILNET}` and then referencing `${MY_HOST}` produces an empty string. Always inline `${DB_MAGIC_NAME}.${TS_TAILNET}` directly in the consuming env var (e.g. `GTS_DB_ADDRESS`, `DATABASE_HOST`).
+- **Check the app's actual env-var → config-key mapping before naming variables.** Apps derive env-var names in different ways and a wrong name is silently ignored. Examples caught in this repo: GoToSocial maps `db-address` → `GTS_DB_ADDRESS` (not `GTS_DB_HOST`); PeerTube maps `secrets.peertube` → `PEERTUBE_SECRET` (not `PEERTUBE_SECRETS_PEERTUBE`). Always verify against the app's `custom-environment-variables.yaml` or equivalent before writing a new env var.
+- **Many official images set the binary as `ENTRYPOINT`.** When invoking via `docker compose run <svc> <cmd>`, do NOT prefix with the binary name — that becomes the first argv and scrambles the CLI parser. Pass subcommands directly.
+- **`docker compose run` parses its own flags interspersedly** and will swallow app flags that overlap (notably `--user`/`--username`). For app admin commands that take `--username`, use `docker exec` into the already-running container instead of `docker compose run`.
+- **Bind-mounted cache directories inherit host ownership.** For caches that the app writes to as a non-root uid (e.g. GTS Wazero cache), use a named volume instead — Docker manages ownership from the image filesystem.
+- **`shared-db/initdb/*.sh` only runs on an empty pg-data volume.** Use `bootstrap.sh provision-db <app>` instead — it is idempotent and works on any volume state.
+- **Passwords with `/` or `+` break `DATABASE_URL`-style connection strings.** Apps that assemble a URI from parts (e.g. Funkwhale: `postgresql://user:password@host/db`) will mis-parse a base64 password containing slashes as URI path separators. Use `openssl rand -hex 32` for any password embedded in a URL, and note this constraint in `.env.example` next to the affected variable.
+
 ## What not to do
 
 - **Don't add `ports:` to any internal service.** If a port is needed externally, route it through host Nginx + MagicDNS.
@@ -293,6 +314,6 @@ These are deliberately unresolved and should be flagged to the user when relevan
 - **Multi-host clustering**: current design is single-host. Moving Postgres to a dedicated host on the tailnet is a known future step but not implemented.
 - **Backup strategy for `pg-data` and similar volumes**: not yet templated. Operator's responsibility for now.
 - **Cert management for host Nginx**: assumed to be the operator's existing process (Let's Encrypt via certbot or similar). Not in scope for this repo.
-- **Object storage for media** (Pixelfed/Funkwhale uploads): currently local volume. S3-compatible backend templating is a future concern.
+- **Object storage for media**: PeerTube has S3 templated (opt-in via `PEERTUBE_OBJECT_STORAGE_*` env vars in `.env.example`). Pixelfed and Funkwhale are still local-volume only — retrofit them with the same `<APP>_OBJECT_STORAGE_*` pattern when an operator needs it.
 
 If a user request touches one of these, say so and ask before implementing.

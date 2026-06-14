@@ -1,0 +1,114 @@
+# GoToSocial — single binary, no separate workers or streaming tier.
+#
+# Bring up shared-db/ first. On a fresh pg-data volume the initdb script
+# creates the gotosocial user/database automatically. On an existing
+# volume, run the manual bootstrap command from the repo README.
+#
+# GoToSocial has no Redis dependency.
+
+name: federated-gotosocial
+
+services:
+
+  ts-gotosocial-web:
+    image: tailscale/tailscale:${TAILSCALE_VERSION:-v1.98.4}
+    hostname: ${GOTOSOCIAL_WEB_MAGIC_NAME}
+    environment:
+      TS_AUTHKEY: ${TS_OAUTH_CLIENT_SECRET}?ephemeral=true
+      TS_EXTRA_ARGS: --advertise-tags=tag:gotosocial-web
+      TS_HOSTNAME: ${GOTOSOCIAL_WEB_MAGIC_NAME}
+      TS_ACCEPT_DNS: "true"
+      TS_AUTH_ONCE: "true"
+      TS_USERSPACE: "false"
+      TS_ENABLE_HEALTH_CHECK: "true"
+      TS_LOCAL_ADDR_PORT: "127.0.0.1:9002"
+    dns: [1.1.1.1, 1.0.0.1]
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9002/healthz && nc -z -w3 ${DB_MAGIC_NAME}.${TS_TAILNET} 5432"]
+      interval: 10s
+      timeout: 15s
+      retries: 6
+      start_period: 30s
+    restart: unless-stopped
+
+  gotosocial:
+    image: docker.io/superseriousbusiness/gotosocial:${GOTOSOCIAL_VERSION:-0.21.2}
+    network_mode: "service:ts-gotosocial-web"
+    environment:
+      GTS_HOST: ${GOTOSOCIAL_URL}
+      GTS_DB_TYPE: postgres
+      # GTS_DB_ADDRESS must be written inline. Docker Compose does not expand
+      # variables inside other variables, so ${DB_MAGIC_NAME}.${TS_TAILNET}
+      # cannot live inside an intermediate var like GOTOSOCIAL_DB_HOST.
+      GTS_DB_ADDRESS: ${DB_MAGIC_NAME}.${TS_TAILNET}
+      GTS_DB_PORT: "5432"
+      GTS_DB_NAME: ${GOTOSOCIAL_DB_NAME}
+      GTS_DB_USER: ${GOTOSOCIAL_DB_USER}
+      GTS_DB_PASSWORD: ${GOTOSOCIAL_DB_PASSWORD}
+      GTS_LETSENCRYPT_ENABLED: "false"
+      GTS_WAZERO_COMPILATION_CACHE: /gotosocial/.cache
+      GTS_TRUSTED_PROXIES: ${GOTOSOCIAL_PROXY}
+      # SMTP host/port/user/password come from the shared SMTP_* relay in .env;
+      # only the sender address and display name are GTS-specific. GTS disables
+      # email automatically when GTS_SMTP_HOST is empty.
+      GTS_SMTP_HOST: ${SMTP_HOST}
+      GTS_SMTP_PORT: ${SMTP_PORT}
+      GTS_SMTP_USER: ${SMTP_USER}
+      GTS_SMTP_PASSWORD: ${SMTP_PASSWORD}
+      GTS_SMTP_FROM: ${GOTOSOCIAL_SMTP_FROM}
+      GTS_SMTP_DISPLAY_NAME: ${SMTP_FROM_NAME}
+      GTS_CONFIG_PATH: /gotosocial/config.yaml
+      # ---- Object storage (S3 via Garage) — opt in ----
+      # Set GOTOSOCIAL_STORAGE_BACKEND=s3 in .env to store media in Garage
+      # instead of the local gotosocialuploads volume. Credentials come from
+      # the shared GARAGE_* block — no per-app key needed.
+      #
+      # PITFALL: GoToSocial uses the minio-go client, so the endpoint is
+      # host:port ONLY, with NO scheme. A "http://" prefix triggers
+      # "Endpoint url cannot have fully qualified paths" at boot. The scheme is
+      # selected by USE_SSL instead — false for Garage's plaintext tailnet
+      # endpoint. (This differs from Pixelfed/PeerTube, which take a full URL.)
+      GTS_STORAGE_BACKEND: ${GOTOSOCIAL_STORAGE_BACKEND:-local}
+      GTS_STORAGE_S3_ENDPOINT: ${GARAGE_MAGIC_NAME}.${TS_TAILNET}:3900
+      GTS_STORAGE_S3_USE_SSL: "false"
+      GTS_STORAGE_S3_ACCESS_KEY: ${GARAGE_ACCESS_KEY_ID:-}
+      GTS_STORAGE_S3_SECRET_KEY: ${GARAGE_SECRET_ACCESS_KEY:-}
+      GTS_STORAGE_S3_BUCKET: ${GOTOSOCIAL_S3_BUCKET:-gotosocial-media}
+      GTS_STORAGE_S3_REGION: ${GARAGE_REGION:-garage}
+      # auto → path-style for non-AWS endpoints (correct for Garage).
+      GTS_STORAGE_S3_BUCKET_LOOKUP: auto
+      # proxy=false: GTS redirects clients to the public media URL below rather
+      # than streaming every media byte through the app. Required for the
+      # web-endpoint serving model. Set true to proxy media through GTS (no
+      # public URL needed, but heavier — every fetch hits the app).
+      GTS_STORAGE_S3_PROXY: ${GOTOSOCIAL_S3_PROXY:-false}
+      # Public media URL. REQUIRED when backend=s3 and proxy=false — otherwise
+      # GTS hands out presigned tailnet URLs (port 3900) that public browsers
+      # cannot reach. Point at a Caddy/nginx block that rewrites the Host to
+      # gotosocial-media.web.garage.local — see nginx/sites-available/garage-media.conf.
+      # Must be its OWN domain, distinct from other apps' media domains (each
+      # media domain maps to exactly one bucket).
+      GTS_STORAGE_S3_REDIRECT_URL: ${GOTOSOCIAL_S3_REDIRECT_URL:-}
+    volumes:
+      - gotosocial-wazero-cache:/gotosocial/.cache
+      - ./gotosocial/config.yaml:/gotosocial/config.yaml
+      - gotosocialuploads:/gotosocial/storage
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    depends_on:
+      ts-gotosocial-web:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  gotosocialuploads:
+  gotosocial-wazero-cache:
