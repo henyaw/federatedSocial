@@ -29,15 +29,14 @@ Not every app is at the same level of polish. This stack ships templates for mor
 | **Lemmy** | link aggregator | ✅ | ✗ ² | 🟡 No SSO |
 | **Stalwart** | mail | ✅ | 🟡 ³ | 🟡 Token-only SSO |
 | **Diaspora** | microblog | ✗ ⁴ | 🚧 | 🟡 Local media only |
-| **Funkwhale** | audio | 🟡 ⁵ | ✗ ⁶ | 🟡 S3 only |
+| **Funkwhale** | audio | ✅ | ✗ ⁶ | 🟡 S3 only |
 | **PeerTube** | video | 🚧 | 🚧 | 🚧 Untested |
 
 ¹ Pixelfed has no first-class OIDC upstream — SSO would be a custom job.
 ² Lemmy's OAuth/OIDC lives only on its dev branch; no stable release has it (checked through 0.19.19). S3 via pict-rs object storage works.
 ³ Stalwart v0.16 external OIDC is **token validation only** — a client presents an Authelia access token via `OAUTHBEARER` SASL; there is **no browser SSO** for the web-admin console. Admin/relay accounts keep password auth as break-glass.
 ⁴ Diaspora's S3 support is AWS-only (no custom endpoint), so it can't target Garage — media stays on a local volume.
-⁵ Funkwhale S3 is wired (reuses the shared Garage key; media served through the front nginx, so no public media host needed). Validate on first bring-up.
-⁶ Funkwhale has no OpenID Connect/SSO support upstream (OAuth2 provider + LDAP only) — OIDC login is a long-standing, unimplemented feature request.
+⁶ Funkwhale has no OpenID Connect/SSO support upstream (OAuth2 provider + LDAP only) — OIDC login is a long-standing, unimplemented feature request. Media is served through the front nginx over the tailnet, so no public media host is needed.
 
 Infrastructure stacks (`shared-db`, `garage`, `authelia`) are the foundation the verified apps run on and are considered working.
 
