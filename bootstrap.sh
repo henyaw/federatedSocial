@@ -238,7 +238,7 @@ cmd_provision_garage() {
   fi
 
   echo "[bootstrap] Ensuring buckets..."
-  local buckets=(pg-backups mastodon-media pixelfed-media gotosocial-media stalwart-mail peertube-web-videos peertube-streaming-playlists funkwhale-music)
+  local buckets=(pg-backups mastodon-media pixelfed-media gotosocial-media stalwart-mail peertube-web-videos peertube-streaming-playlists funkwhale-music lemmy-pictrs)
   for bucket in "${buckets[@]}"; do
     if _g bucket create "$bucket" 2>/dev/null; then
       echo "[bootstrap]   created: ${bucket}"
@@ -284,7 +284,9 @@ cmd_provision_garage() {
   # terminates public TLS and forwards to this endpoint — see
   # nginx/sites-available/garage-media.conf.
   #
-  # pg-backups and stalwart-mail are intentionally excluded — mail blobs are private.
+  # pg-backups, stalwart-mail, and lemmy-pictrs are intentionally excluded —
+  # mail blobs are private, and Lemmy serves images THROUGH pict-rs (which reads
+  # from S3 and proxies the bytes), so its bucket needs no anonymous web access.
   local public_buckets=(mastodon-media pixelfed-media gotosocial-media peertube-web-videos peertube-streaming-playlists funkwhale-music)
   echo "[bootstrap] Enabling website serving on public media buckets..."
   for bucket in "${public_buckets[@]}"; do
