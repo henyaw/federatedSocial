@@ -123,7 +123,7 @@ services:
     restart: unless-stopped
 
   web:
-    image: ghcr.io/pixelfed-glitch/pixelfed:nginx-${PIXELFED_VERSION:-0.12.6-glitch.1.12.1}
+    image: ghcr.io/pixelfed-glitch/pixelfed:nginx-${PIXELFED_VERSION:-8.4-0.12.6-glitch.1.12.1}
     network_mode: "service:ts-pixelfed-web"
     entrypoint: ["/usr/local/bin/ts-entrypoint.sh"]
     command: ["forego", "start", "-r"]
@@ -176,7 +176,7 @@ services:
     restart: unless-stopped
 
   worker:
-    image: ghcr.io/pixelfed-glitch/pixelfed:fpm-${PIXELFED_VERSION:-0.12.6-glitch.1.12.1}
+    image: ghcr.io/pixelfed-glitch/pixelfed:fpm-${PIXELFED_VERSION:-8.4-0.12.6-glitch.1.12.1}
     network_mode: "service:ts-pixelfed-worker"
     entrypoint: ["/usr/local/bin/ts-entrypoint.sh"]
     command: ["gosu", "www-data", "php", "artisan", "horizon"]
@@ -203,7 +203,7 @@ services:
     restart: unless-stopped
 
   cron:
-    image: ghcr.io/pixelfed-glitch/pixelfed:fpm-${PIXELFED_VERSION:-0.12.6-glitch.1.12.1}
+    image: ghcr.io/pixelfed-glitch/pixelfed:fpm-${PIXELFED_VERSION:-8.4-0.12.6-glitch.1.12.1}
     network_mode: "service:ts-pixelfed-worker"
     entrypoint: ["/usr/local/bin/ts-entrypoint.sh"]
     command: ["gosu", "www-data", "php", "artisan", "schedule:work"]

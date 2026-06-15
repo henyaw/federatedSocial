@@ -42,6 +42,12 @@ APP_TIMEZONE=${APP_TIMEZONE:-UTC}
 APP_LOCALE=${APP_LOCALE:-en}
 APP_FALLBACK_LOCALE=${APP_FALLBACK_LOCALE:-en}
 
+# Reverse proxy — host Nginx terminates TLS and proxies in over the tailnet,
+# so Pixelfed must trust the forwarded proto/host to build https:// URLs and
+# set secure cookies. The container is reachable only via host Nginx (gated by
+# the tailnet ACL), so trusting all proxies is safe here.
+TRUST_PROXIES=*
+
 DB_CONNECTION=pgsql
 DB_HOST=${DB_HOST}
 DB_PORT=${DB_PORT:-5432}
@@ -66,12 +72,14 @@ HORIZON_PREFIX=horizon-
 INSTANCE_DESCRIPTION="${INSTANCE_DESCRIPTION:-}"
 INSTANCE_CONTACT_EMAIL=${INSTANCE_CONTACT_EMAIL:-admin@${APP_DOMAIN}}
 INSTANCE_CONTACT_FORM=${INSTANCE_CONTACT_FORM:-false}
-TRUST_PROXIES=${TRUST_PROXIES:-100.64.0.0/10}
 
 # Registration
 OPEN_REGISTRATION=${OPEN_REGISTRATION:-false}
 ENFORCE_EMAIL_VERIFICATION=${ENFORCE_EMAIL_VERIFICATION:-false}
 INSTANCE_CUR_REG=${INSTANCE_CUR_REG:-false}
+
+# API / OAuth — required for the Pixelfed mobile apps and third-party clients.
+OAUTH_ENABLED=true
 
 # Federation
 ACTIVITY_PUB=${ACTIVITY_PUB:-true}
