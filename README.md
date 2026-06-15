@@ -10,10 +10,34 @@ Self-host federated social services — Pixelfed, Mastodon, Diaspora, Funkwhale,
 - **Tag-based access control**: who can talk to what is defined in a single JSON file in the Tailscale admin console, not in iptables or firewall configs.
 - **A single operator script** (`bootstrap.sh`) that brings stacks up and down, provisions databases and storage, and creates admin users — so you don't have to learn each app's CLI.
 - **Stalwart mail server** (SMTP, IMAP, JMAP) on the tailnet. All configuration lives in Postgres; mail blobs in Garage. One mail stack shared by all your instances, with Let's Encrypt certificates via ACME and a web admin UI.
-- **Authelia SSO/OIDC** — single sign-on for GoToSocial, Mastodon, Funkwhale, and PeerTube. One set of credentials, one login portal at `auth.yourdomain.com`. OIDC clients are registered in `authelia/configuration.yml`.
+- **Authelia SSO/OIDC** — single sign-on for the apps that support it (verified for GoToSocial and Mastodon — see [What works today](#what-works-today)). One set of credentials, one login portal at `auth.yourdomain.com`. OIDC clients are registered in `authelia/configuration.yml`.
 - **Lemmy** federated link aggregator and community discussion board, with full ActivityPub federation.
 - **Clean teardown**: tearing a stack down removes its services from your Tailscale admin console automatically. No ghost devices to clean up.
 - **One `.env` file** controls the whole stack. Hostnames, passwords, domains, SMTP, storage keys — all in one place.
+
+## What works today
+
+Not every app is at the same level of polish. This stack ships templates for more apps than have been verified end-to-end — so here's the honest scorecard, to save you a wasted afternoon.
+
+> **Legend** — ✅ **works** (wired and verified end-to-end) · 🟡 **kinda works** (usable, but read the caveat) · 🚧 **you're on your own** (template/stub, unverified — expect to debug) · ✗ **not available**
+
+| App | Kind | Media → Garage (S3) | SSO (Authelia OIDC) | Status |
+|-----|------|:-------------------:|:-------------------:|--------|
+| **GoToSocial** | microblog | ✅ | ✅ | ✅ Full boat |
+| **Mastodon** | microblog | ✅ | ✅ | ✅ Full boat |
+| **Pixelfed** | photos | ✅ | ✗ ¹ | 🟡 No SSO |
+| **Lemmy** | link aggregator | ✅ | ✗ ² | 🟡 No SSO |
+| **Stalwart** | mail | ✅ | 🟡 ³ | 🟡 Token-only SSO |
+| **Diaspora** | microblog | ✗ ⁴ | 🚧 | 🟡 Local media only |
+| **Funkwhale** | audio | 🚧 | 🚧 | 🚧 Untested |
+| **PeerTube** | video | 🚧 | 🚧 | 🚧 Untested |
+
+¹ Pixelfed has no first-class OIDC upstream — SSO would be a custom job.
+² Lemmy's OAuth/OIDC lives only on its dev branch; no stable release has it (checked through 0.19.19). S3 via pict-rs object storage works.
+³ Stalwart v0.16 external OIDC is **token validation only** — a client presents an Authelia access token via `OAUTHBEARER` SASL; there is **no browser SSO** for the web-admin console. Admin/relay accounts keep password auth as break-glass.
+⁴ Diaspora's S3 support is AWS-only (no custom endpoint), so it can't target Garage — media stays on a local volume.
+
+Infrastructure stacks (`shared-db`, `garage`, `authelia`) are the foundation the verified apps run on and are considered working.
 
 ## What you need
 
