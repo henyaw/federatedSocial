@@ -917,8 +917,9 @@ cmd_user_create() {
           --username="$username" \
           --email="$email" \
           --password="$password" \
-          --is_admin=1 \
           --confirm_email=1
+      dc pixelfed run --rm web \
+        php artisan user:admin "$username"
       ;;
 
     diaspora)
