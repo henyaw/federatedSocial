@@ -146,7 +146,7 @@
       "src": [
         "tag:gotosocial-web",
         "tag:mastodon-web",
-        "tag:funkwhale-web",
+        // Funkwhale omitted — no OIDC/SSO support upstream (S3-only stack).
         "tag:peertube-web",
       ],
       "dst": ["tag:authelia"],

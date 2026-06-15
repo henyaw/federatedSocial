@@ -159,17 +159,11 @@ identity_providers:
         response_types: [code]
 
     # --- Funkwhale ---
-    # Funkwhale supports OIDC via django-allauth. Configure the provider in
-    # the Funkwhale admin UI (Social Applications) after registering here.
-    # - client_id: funkwhale
-    #   client_name: Funkwhale
-    #   client_secret: "$pbkdf2-sha512$..."
-    #   public: false
-    #   authorization_policy: one_factor
-    #   redirect_uris:
-    #     - https://funkwhale.example.com/api/v1/oauth/complete/funkwhale-oidc/
-    #   scopes: [openid, profile, email]
-    #   response_types: [code]
+    # Funkwhale has NO OpenID Connect / SSO support upstream — it can act as an
+    # OAuth2 *provider* for apps, and supports LDAP, but cannot delegate login
+    # to an external OIDC provider like Authelia (long-standing feature request,
+    # not implemented through 1.x/2.0). So there is no Funkwhale client here;
+    # the Funkwhale stack is S3-only. Revisit if upstream adds OIDC RP support.
 
     # --- PeerTube ---
     # PeerTube supports OIDC via its built-in plugin system.
