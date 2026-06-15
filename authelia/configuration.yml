@@ -89,10 +89,24 @@ identity_providers:
     jwks:
       - key_id: main
         algorithm: RS256
-        # Operator-generated private key, gitignored.
+        use: sig
+        # Authelia's jwks 'key' takes PEM CONTENT (not a path, not a _FILE env).
+        # The template filter (X_AUTHELIA_CONFIG_FILTERS=template, set in
+        # docker-compose.yml) inlines + indents /config/private.pem here at load
+        # time, so the key stays gitignored and out of this tracked template.
         # Generate: openssl genrsa -out authelia/private.pem 4096
-        key:
-          path: /config/private.pem
+        key: {{ secret "/config/private.pem" | mindent 10 "|" | msquote }}
+
+    # ---- Claims policies ----
+    # Authelia 4.39+ no longer puts standard/extra claims (email, groups, name,
+    # …) in the ID TOKEN by default — they're only exposed at the userinfo
+    # endpoint. GoToSocial reads claims from the ID token, so without this it
+    # gets an empty email and account creation fails with "mail: no address".
+    # This policy injects the needed claims into the id_token for clients that
+    # reference it via `claims_policy`.
+    claims_policies:
+      gotosocial:
+        id_token: [email, email_verified, name, preferred_username, groups]
 
     # ---- OIDC clients ----
     # Register one client per app that integrates with Authelia.
@@ -100,21 +114,27 @@ identity_providers:
     # random. Redirect URIs must exactly match what the app sends in its auth
     # request — check the app's OIDC documentation for the correct path.
     #
-    # clients:
+    clients:
 
     # --- GoToSocial ---
-    # GTS reads OIDC config from its admin settings UI, not from env vars.
-    # After registering the client here, configure the same client_id and
-    # client_secret in the GTS admin panel under "OIDC".
-    # - client_id: gotosocial
-    #   client_name: GoToSocial
-    #   client_secret: "$pbkdf2-sha512$..."  # hash with: authelia crypto hash generate pbkdf2 --password 'secret'
-    #   public: false
-    #   authorization_policy: one_factor
-    #   redirect_uris:
-    #     - https://gotosocial.example.com/auth/callback
-    #   scopes: [openid, profile, email, groups]
-    #   response_types: [code]
+    # GTS configures OIDC from env/flags ONLY (it has no OIDC admin UI) — see
+    # gotosocial/docker-compose.yml GTS_OIDC_*. The two placeholders below are
+    # rendered by bootstrap.sh into configuration.runtime.yml (gitignored):
+    #   __GTS_OIDC_HASH__   <- pbkdf2 hash derived from GOTOSOCIAL_OIDC_CLIENT_SECRET
+    #   __GOTOSOCIAL_URL__  <- GOTOSOCIAL_URL from .env
+    # so no secret or real domain is ever committed; GTS holds the plaintext.
+    # (When SSO is off, a throwaway hash is rendered so this stays a valid—but
+    # unused—client, since Authelia requires at least one OIDC client.)
+      - client_id: gotosocial
+        client_name: GoToSocial
+        client_secret: "__GTS_OIDC_HASH__"
+        public: false
+        authorization_policy: one_factor
+        claims_policy: gotosocial
+        redirect_uris:
+          - https://__GOTOSOCIAL_URL__/auth/callback
+        scopes: [openid, profile, email, groups]
+        response_types: [code]
 
     # --- Mastodon ---
     # Mastodon does not natively support OIDC; use an OIDC proxy adapter

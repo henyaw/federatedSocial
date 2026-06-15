@@ -819,11 +819,32 @@ cmd_up() {
   if [[ "$stack" == "authelia" ]]; then
     # Generate configuration.runtime.yml from the tracked template.
     # Pattern mirrors garage.runtime.toml and stalwart config.runtime.json.
+    # The tracked template ships placeholders only — no secrets or real domains.
     local authelia_domain="${AUTHELIA_DOMAIN:-auth.example.com}"
-    sed "s|__AUTHELIA_DOMAIN__|${authelia_domain}|g" \
+    local gts_url="${GOTOSOCIAL_URL:-gotosocial.example.com}"
+
+    # GoToSocial OIDC client_secret: Authelia stores a pbkdf2 HASH; GTS holds the
+    # plaintext (GOTOSOCIAL_OIDC_CLIENT_SECRET). Derive the hash here so only the
+    # gitignored runtime config ever contains it. SSO must have a secret when
+    # enabled; when off we hash a throwaway so the client stays valid-but-unused
+    # (Authelia requires >=1 client).
+    if [[ "${GOTOSOCIAL_OIDC_ENABLED:-false}" == "true" && -z "${GOTOSOCIAL_OIDC_CLIENT_SECRET:-}" ]]; then
+      die "GOTOSOCIAL_OIDC_ENABLED=true but GOTOSOCIAL_OIDC_CLIENT_SECRET is empty.
+  Generate one: openssl rand -hex 32"
+    fi
+    local gts_oidc_secret="${GOTOSOCIAL_OIDC_CLIENT_SECRET:-$(openssl rand -hex 16)}"
+    local gts_oidc_hash
+    gts_oidc_hash="$(docker run --rm "authelia/authelia:${AUTHELIA_VERSION:-4.39.20}" \
+      authelia crypto hash generate pbkdf2 --variant sha512 --password "${gts_oidc_secret}" \
+      2>/dev/null | sed -n 's/^Digest: //p')"
+    [[ -n "$gts_oidc_hash" ]] || die "Failed to derive GoToSocial OIDC client secret hash (is docker + the authelia image available?)."
+
+    sed -e "s|__AUTHELIA_DOMAIN__|${authelia_domain}|g" \
+        -e "s|__GOTOSOCIAL_URL__|${gts_url}|g" \
+        -e "s|__GTS_OIDC_HASH__|${gts_oidc_hash}|g" \
       "${REPO_ROOT}/authelia/configuration.yml" \
       > "${REPO_ROOT}/authelia/configuration.runtime.yml"
-    echo "[bootstrap] Generated authelia/configuration.runtime.yml (domain=${authelia_domain})."
+    echo "[bootstrap] Generated authelia/configuration.runtime.yml (domain=${authelia_domain}, gts=${gts_url}, oidc=${GOTOSOCIAL_OIDC_ENABLED:-false})."
 
     local pem="${REPO_ROOT}/authelia/private.pem"
     local users="${REPO_ROOT}/authelia/users.yml"

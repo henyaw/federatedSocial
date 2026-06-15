@@ -29,6 +29,30 @@
 {
   email admin@example.com
 
+  # This Caddy shares the host with the Stalwart L4 mail edge (layer4 block
+  # below), which owns the public :443 for SNI fan-out. Move Caddy's own web
+  # HTTPS to :8443 so the two don't collide. (Omit both this line and the
+  # layer4 block if a dedicated edge box runs the mail edge instead.)
+  https_port 8443
+
+  # The :443 fan-out hands web connections to :8443 over 127.0.0.1, which would
+  # otherwise hide the client IP — apps would see 127.0.0.1 in X-Forwarded-For
+  # and break per-client rate limiting (GoToSocial warns about exactly this).
+  # Accept PROXY protocol on the L7 listeners from the local edge so the real
+  # client IP survives the hop. `allow 127.0.0.1/32` scopes it to the edge so
+  # direct connections (e.g. :80 ACME challenges) pass through untouched; `tls`
+  # re-applies TLS termination after the wrapper. Pair with `proxy_protocol v2`
+  # on the :443 -> 127.0.0.1:8443 route below, and trust 100.64.0.0/10 in each
+  # app (e.g. PIXELFED_TRUST_PROXIES, GOTOSOCIAL_PROXY).
+  servers {
+    listener_wrappers {
+      proxy_protocol {
+        allow 127.0.0.1/32
+      }
+      tls
+    }
+  }
+
   # ---------------------------------------------------------------------------
   # L4 mail edge — Stalwart TCP pass-through
   # ---------------------------------------------------------------------------
@@ -91,22 +115,22 @@
     # ---- :443 SNI fan-out ----
     # Stalwart's web endpoints (MTA-STS policy, autoconfig, autodiscover)
     # present specific SNI names — route those to Stalwart, which terminates
-    # TLS with its own wildcard cert. No PROXY protocol on :443.
-    # All other SNI falls through to this Caddy's own HTTPS listener on :8443.
-    #
-    # IMPORTANT: because this block owns :443, add https_port 8443 to the
-    # global options block (uncomment the line below) so Caddy's web vhosts
-    # move off :443.
-    # https_port 8443
+    # TLS with its own wildcard cert (no PROXY protocol on this route).
+    # All other SNI falls through to this Caddy's own HTTPS listener on :8443,
+    # WITH PROXY protocol v2 so the client IP reaches the listener_wrappers
+    # block in the global options above (https_port 8443 is set there).
     :443 {
-      route {
-        @stalwart-sni tls sni mta-sts.mail.example.com autoconfig.mail.example.com autodiscover.mail.example.com
-        proxy @stalwart-sni {
+      # Matcher lives at the segment level (not inside route) — caddy-l4 rejects
+      # `proxy @name` inside a route block.
+      @stalwart-sni tls sni mta-sts.mail.example.com autoconfig.mail.example.com autodiscover.mail.example.com
+      route @stalwart-sni {
+        proxy {
           upstream stalwart.tailfe8c.ts.net:443
         }
       }
       route {
         proxy {
+          proxy_protocol v2
           upstream 127.0.0.1:8443
         }
       }
