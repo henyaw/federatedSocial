@@ -119,8 +119,42 @@
 # ---------------------------------------------------------------------------
 # Pixelfed's container nginx listens on port 80 inside its sidecar netns,
 # reachable via MagicDNS over the tailnet.
+#
+# Host header, X-Forwarded-* and request streaming are Caddy defaults and are
+# what make TRUST_PROXIES=* inside the app behave (it sees https + real client
+# IP). The directives below add what Caddy does NOT do by default:
+#   - encode:        compress API/ActivityPub/HTML responses.
+#   - HSTS:          Caddy auto-provisions TLS but adds no HSTS header.
+#   - request_body:  Caddy has no default body limit; cap it so a public
+#                    endpoint can't be flooded with an arbitrarily large POST.
+#                    32MB is ~2x Pixelfed's default per-file MAX_PHOTO_SIZE
+#                    (~15MB; the composer uploads one file per request). If you
+#                    raise MAX_PHOTO_SIZE in .env, raise this to match.
 pixelfed.example.com {
+  encode zstd gzip
+  header Strict-Transport-Security "max-age=31536000"
+  request_body {
+    max_size 32MB
+  }
   reverse_proxy pixelfed.tailfe8c.ts.net:80
+}
+
+# ---------------------------------------------------------------------------
+# Pixelfed media — ONLY when storing uploads in S3/Garage (PF_ENABLE_CLOUD=true)
+# ---------------------------------------------------------------------------
+# With cloud storage, Pixelfed builds media URLs from AWS_URL, so set
+# PIXELFED_S3_URL=https://pixelfed-media.example.com in .env (it becomes the
+# app's AWS_URL) and this block fronts Garage's web endpoint (:3902 — the app
+# itself talks to the S3 API on :3900 via AWS_ENDPOINT). The header_up Host
+# line is the whole point: object stores route by Host, so we send the *bucket
+# vhost* (<AWS_BUCKET>.<garage-web-root-domain, set in garage.toml>), not the
+# public hostname, so Garage serves the right bucket. This is GET-only public
+# traffic — uploads go from the app to Garage over the tailnet, not through here.
+pixelfed-media.example.com {
+  header Strict-Transport-Security "max-age=31536000"
+  reverse_proxy http://garage.tailfe8c.ts.net:3902 {
+    header_up Host pixelfed-media.web.garage.local
+  }
 }
 
 # ---------------------------------------------------------------------------
@@ -135,6 +169,17 @@ mastodon.example.com {
   }
   handle {
     reverse_proxy mastodon.tailfe8c.ts.net:3000
+  }
+}
+
+# Public media — ONLY when MASTODON_S3_ENABLED=true. Set in .env:
+#   MASTODON_S3_ALIAS_HOST=mastodon-media.example.com   (host only, no scheme)
+# Fronts Garage's WEB endpoint (:3902), NOT the S3 API (:3900, signed-only).
+# header_up Host selects the bucket. See README "Serving media to the public".
+mastodon-media.example.com {
+  header Strict-Transport-Security "max-age=31536000"
+  reverse_proxy http://garage.tailfe8c.ts.net:3902 {
+    header_up Host mastodon-media.web.garage.local
   }
 }
 
@@ -181,6 +226,17 @@ gotosocial.example.com {
     max_size 40MB
   }
   reverse_proxy gotosocial.tailfe8c.ts.net:8080
+}
+
+# Public media — ONLY when GOTOSOCIAL_STORAGE_BACKEND=s3 and GOTOSOCIAL_S3_PROXY=false.
+# Set in .env: GOTOSOCIAL_S3_REDIRECT_URL=https://gts-media.example.com
+# Fronts Garage's WEB endpoint (:3902), NOT the S3 API (:3900, signed-only).
+# header_up Host selects the bucket. See README "Serving media to the public".
+gts-media.example.com {
+  header Strict-Transport-Security "max-age=31536000"
+  reverse_proxy http://garage.tailfe8c.ts.net:3902 {
+    header_up Host gotosocial-media.web.garage.local
+  }
 }
 
 # ---------------------------------------------------------------------------
