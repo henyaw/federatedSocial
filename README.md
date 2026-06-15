@@ -545,6 +545,12 @@ Pixelfed support in this stack is **proudly built on [Pixelfed Glitch](https://p
 - 📖 **Documentation** — <https://pixelfed-glitch.github.io/docs/running-pixelfed/>
 - 💻 **Repository** — <https://github.com/pixelfed-glitch/pixelfed>
 
+GoToSocial support deploys the official **[GoToSocial](https://gotosocial.org)** container images (`docker.io/superseriousbusiness/gotosocial`, pinned via `GOTOSOCIAL_VERSION` in `.env`) — a lightweight, AGPLv3-licensed ActivityPub server by the GoToSocial Authors. Single sign-on is wired through Authelia OIDC.
+
+- 🌐 **Website** — <https://gotosocial.org>
+- 📖 **Documentation** — <https://docs.gotosocial.org>
+- 💻 **Repository** — <https://codeberg.org/superseriousbusiness/gotosocial>
+
 ## License
 
 See `LICENSE` in the repo root.
