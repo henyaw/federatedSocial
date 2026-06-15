@@ -87,6 +87,63 @@ but since you are using DNS-01 for certs, this does not apply.
 A dedicated edge host (running the mail edge on a separate box with no web
 vhosts) can omit the `:443 {}` block entirely.
 
+## Preserving the client IP (PROXY protocol)
+
+When the `:443` SNI fan-out is enabled, web requests take an extra hop:
+
+```
+browser -> :443 (layer4 SNI fan-out) -> 127.0.0.1:8443 (Caddy L7) -> app
+```
+
+A plain TCP proxy on that hop rewrites the source to `127.0.0.1`, so the L7
+Caddy stamps `X-Forwarded-For: 127.0.0.1` and every app sees the loopback
+address instead of the real client. This silently breaks per-client rate
+limiting and federation heuristics — GoToSocial surfaces it as a
+`trusted-proxies` warning banner; most apps fail quietly.
+
+The fix is to carry PROXY protocol across that hop too:
+
+1. In the `:443` catch-all route, send it:
+
+   ```caddyfile
+   route {
+     proxy {
+       proxy_protocol v2
+       upstream 127.0.0.1:8443
+     }
+   }
+   ```
+
+2. In the global options, make the L7 listeners read it:
+
+   ```caddyfile
+   servers {
+     listener_wrappers {
+       proxy_protocol {
+         allow 127.0.0.1/32   # only the local edge speaks PROXY protocol
+       }
+       tls                    # re-apply TLS termination after the wrapper
+     }
+   }
+   ```
+
+   `allow 127.0.0.1/32` scopes it to the local edge so direct connections
+   (e.g. `:80` ACME challenges) are untouched. Both halves are required — a
+   one-sided config breaks the TLS handshake (the PROXY header corrupts the
+   ClientHello), so if web vhosts still serve `200` after a reload, the
+   negotiation is working.
+
+3. Trust the tailnet in each app so it actually uses the forwarded IP. The
+   real client IP now arrives in `X-Forwarded-For` from the Caddy host's
+   tailnet address, so set the app's trusted-proxy CIDR to `100.64.0.0/10`
+   (the Tailscale CGNAT range), e.g. `PIXELFED_TRUST_PROXIES=100.64.0.0/10`,
+   `GOTOSOCIAL_PROXY=100.64.0.0/10`. This is the default in `.env.example`.
+
+The mail ports (`:25/:465/:587/:143/:993`) already use `proxy_protocol v2` —
+this just extends the same treatment to the web fan-out. The Stalwart SNI
+route is the one exception: it stays plain (Stalwart terminates that TLS
+itself and is configured to trust the tailnet for PROXY protocol separately).
+
 ## Deploying with bootstrap.sh
 
 ```bash
