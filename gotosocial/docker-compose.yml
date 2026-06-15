@@ -95,12 +95,29 @@ services:
       # Must be its OWN domain, distinct from other apps' media domains (each
       # media domain maps to exactly one bucket).
       GTS_STORAGE_S3_REDIRECT_URL: ${GOTOSOCIAL_S3_REDIRECT_URL:-}
+      # ---- SSO via Authelia OIDC — opt in ----
+      # Set GOTOSOCIAL_OIDC_ENABLED=true in .env and register a matching client
+      # in authelia/configuration.yml (identity_providers.oidc.clients). GTS
+      # configures OIDC from env/flags ONLY (it has no OIDC admin UI). Scopes are
+      # left at the GTS default [openid,profile,email,groups] — exactly what we
+      # need, so no GTS_OIDC_SCOPES override (avoids env list-format ambiguity).
+      # ISSUER must be the Authelia portal URL (https), reachable from this
+      # container; CLIENT_SECRET is the PLAINTEXT (Authelia stores its hash).
+      # LINK_EXISTING matches an OIDC identity to a local account by email, so
+      # the password admin and the SSO login resolve to the same account.
+      GTS_OIDC_ENABLED: ${GOTOSOCIAL_OIDC_ENABLED:-false}
+      GTS_OIDC_IDP_NAME: ${GOTOSOCIAL_OIDC_IDP_NAME:-}
+      GTS_OIDC_ISSUER: ${GOTOSOCIAL_OIDC_ISSUER:-}
+      GTS_OIDC_CLIENT_ID: ${GOTOSOCIAL_OIDC_CLIENT_ID:-}
+      GTS_OIDC_CLIENT_SECRET: ${GOTOSOCIAL_OIDC_CLIENT_SECRET:-}
+      GTS_OIDC_LINK_EXISTING: ${GOTOSOCIAL_OIDC_LINK_EXISTING:-false}
+      GTS_OIDC_ADMIN_GROUPS: ${GOTOSOCIAL_OIDC_ADMIN_GROUPS:-}
     volumes:
       - gotosocial-wazero-cache:/gotosocial/.cache
       - ./gotosocial/config.yaml:/gotosocial/config.yaml
       - gotosocialuploads:/gotosocial/storage
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/readyz"]
       interval: 30s
       timeout: 10s
       retries: 3
