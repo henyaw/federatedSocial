@@ -75,8 +75,9 @@ services:
       AUTHELIA_SESSION_SECRET: ${AUTHELIA_SESSION_SECRET}
       AUTHELIA_STORAGE_ENCRYPTION_KEY: ${AUTHELIA_STORAGE_ENCRYPTION_KEY}
       AUTHELIA_IDENTITY_PROVIDERS_OIDC_HMAC_SECRET: ${AUTHELIA_OIDC_HMAC_SECRET}
-      # OIDC JWKS key ID (matches the key configured in configuration.yml)
-      AUTHELIA_IDENTITY_PROVIDERS_OIDC_JWKS_0_KEY_ID: main
+      # Enable Authelia's config template filter so configuration.yml can inline
+      # the OIDC JWKS private key from /config/private.pem (see jwks[0].key there).
+      X_AUTHELIA_CONFIG_FILTERS: template
       # SMTP notifier — ONLY uncomment these when SMTP_HOST is set in .env.
       # With a blank SMTP_HOST, Authelia refuses to start. When these are
       # commented out, configuration.yml's filesystem notifier is used instead
