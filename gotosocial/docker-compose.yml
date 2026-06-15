@@ -90,7 +90,8 @@ services:
       # Public media URL. REQUIRED when backend=s3 and proxy=false — otherwise
       # GTS hands out presigned tailnet URLs (port 3900) that public browsers
       # cannot reach. Point at a Caddy/nginx block that rewrites the Host to
-      # gotosocial-media.web.garage.local — see nginx/sites-available/garage-media.conf.
+      # gotosocial-media.web.garage.local — see the media block in
+      # nginx/sites-available/gotosocial.conf (or caddy/Caddyfile).
       # Must be its OWN domain, distinct from other apps' media domains (each
       # media domain maps to exactly one bucket).
       GTS_STORAGE_S3_REDIRECT_URL: ${GOTOSOCIAL_S3_REDIRECT_URL:-}

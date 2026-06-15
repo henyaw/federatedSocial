@@ -172,6 +172,17 @@ mastodon.example.com {
   }
 }
 
+# Public media — ONLY when MASTODON_S3_ENABLED=true. Set in .env:
+#   MASTODON_S3_ALIAS_HOST=mastodon-media.example.com   (host only, no scheme)
+# Fronts Garage's WEB endpoint (:3902), NOT the S3 API (:3900, signed-only).
+# header_up Host selects the bucket. See README "Serving media to the public".
+mastodon-media.example.com {
+  header Strict-Transport-Security "max-age=31536000"
+  reverse_proxy http://garage.tailfe8c.ts.net:3902 {
+    header_up Host mastodon-media.web.garage.local
+  }
+}
+
 # ---------------------------------------------------------------------------
 # Diaspora
 # ---------------------------------------------------------------------------
@@ -215,6 +226,17 @@ gotosocial.example.com {
     max_size 40MB
   }
   reverse_proxy gotosocial.tailfe8c.ts.net:8080
+}
+
+# Public media — ONLY when GOTOSOCIAL_STORAGE_BACKEND=s3 and GOTOSOCIAL_S3_PROXY=false.
+# Set in .env: GOTOSOCIAL_S3_REDIRECT_URL=https://gts-media.example.com
+# Fronts Garage's WEB endpoint (:3902), NOT the S3 API (:3900, signed-only).
+# header_up Host selects the bucket. See README "Serving media to the public".
+gts-media.example.com {
+  header Strict-Transport-Security "max-age=31536000"
+  reverse_proxy http://garage.tailfe8c.ts.net:3902 {
+    header_up Host gotosocial-media.web.garage.local
+  }
 }
 
 # ---------------------------------------------------------------------------
