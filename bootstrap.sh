@@ -839,12 +839,28 @@ cmd_up() {
       2>/dev/null | sed -n 's/^Digest: //p')"
     [[ -n "$gts_oidc_hash" ]] || die "Failed to derive GoToSocial OIDC client secret hash (is docker + the authelia image available?)."
 
+    # Mastodon OIDC client_secret: same pattern as GoToSocial — Authelia stores a
+    # pbkdf2 HASH, Mastodon holds the plaintext (MASTODON_OIDC_CLIENT_SECRET).
+    local mastodon_url="${MASTODON_DOMAIN:-mastodon.example.com}"
+    if [[ "${MASTODON_OIDC_ENABLED:-false}" == "true" && -z "${MASTODON_OIDC_CLIENT_SECRET:-}" ]]; then
+      die "MASTODON_OIDC_ENABLED=true but MASTODON_OIDC_CLIENT_SECRET is empty.
+  Generate one: openssl rand -hex 32"
+    fi
+    local mastodon_oidc_secret="${MASTODON_OIDC_CLIENT_SECRET:-$(openssl rand -hex 16)}"
+    local mastodon_oidc_hash
+    mastodon_oidc_hash="$(docker run --rm "authelia/authelia:${AUTHELIA_VERSION:-4.39.20}" \
+      authelia crypto hash generate pbkdf2 --variant sha512 --password "${mastodon_oidc_secret}" \
+      2>/dev/null | sed -n 's/^Digest: //p')"
+    [[ -n "$mastodon_oidc_hash" ]] || die "Failed to derive Mastodon OIDC client secret hash (is docker + the authelia image available?)."
+
     sed -e "s|__AUTHELIA_DOMAIN__|${authelia_domain}|g" \
         -e "s|__GOTOSOCIAL_URL__|${gts_url}|g" \
         -e "s|__GTS_OIDC_HASH__|${gts_oidc_hash}|g" \
+        -e "s|__MASTODON_URL__|${mastodon_url}|g" \
+        -e "s|__MASTODON_OIDC_HASH__|${mastodon_oidc_hash}|g" \
       "${REPO_ROOT}/authelia/configuration.yml" \
       > "${REPO_ROOT}/authelia/configuration.runtime.yml"
-    echo "[bootstrap] Generated authelia/configuration.runtime.yml (domain=${authelia_domain}, gts=${gts_url}, oidc=${GOTOSOCIAL_OIDC_ENABLED:-false})."
+    echo "[bootstrap] Generated authelia/configuration.runtime.yml (domain=${authelia_domain}, gts=${gts_url}/oidc=${GOTOSOCIAL_OIDC_ENABLED:-false}, mastodon=${mastodon_url}/oidc=${MASTODON_OIDC_ENABLED:-false})."
 
     local pem="${REPO_ROOT}/authelia/private.pem"
     local users="${REPO_ROOT}/authelia/users.yml"

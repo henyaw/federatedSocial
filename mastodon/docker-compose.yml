@@ -73,6 +73,30 @@ x-mastodon-env: &mastodon-env
   # client IP from X-Forwarded-For rather than the tailnet hop address.
   TRUSTED_PROXY_IP: "100.64.0.0/10"
 
+  # ---- SSO via OIDC (bundled omniauth_openid_connect) — opt in ----
+  # Set MASTODON_OIDC_ENABLED=true in .env to add a "Sign in with <name>"
+  # button backed by Authelia. The matching Authelia client (id "mastodon")
+  # and its redirect_uri are rendered by bootstrap.sh from authelia/
+  # configuration.yml — keep MASTODON_OIDC_CLIENT_SECRET in sync (Mastodon
+  # holds the plaintext; Authelia stores its pbkdf2 hash).
+  OIDC_ENABLED: ${MASTODON_OIDC_ENABLED:-false}
+  OIDC_DISPLAY_NAME: ${MASTODON_OIDC_DISPLAY_NAME:-Single Sign-On}
+  OIDC_ISSUER: ${MASTODON_OIDC_ISSUER:-}
+  # Discovery pulls auth/token/userinfo/jwks endpoints from the issuer's
+  # /.well-known/openid-configuration — no need to list them individually.
+  OIDC_DISCOVERY: "true"
+  OIDC_SCOPE: "openid,profile,email"
+  # The OIDC claim used as the stable external user id. preferred_username
+  # mirrors the Authelia login name; switch to "sub" if usernames may change.
+  OIDC_UID_FIELD: ${MASTODON_OIDC_UID_FIELD:-preferred_username}
+  OIDC_CLIENT_ID: ${MASTODON_OIDC_CLIENT_ID:-mastodon}
+  OIDC_CLIENT_SECRET: ${MASTODON_OIDC_CLIENT_SECRET:-}
+  # Inline domain — Compose does not expand vars inside vars.
+  OIDC_REDIRECT_URI: https://${MASTODON_DOMAIN}/auth/auth/openid_connect/callback
+  # Authelia asserts email_verified; trust it so new SSO users skip the
+  # "confirm your email" step (they have no password to reset anyway).
+  OIDC_SECURITY_ASSUME_EMAIL_IS_VERIFIED: "true"
+
 services:
 
   # ---------------------------------------------------------------------
