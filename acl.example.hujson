@@ -221,6 +221,7 @@
         "tag:funkwhale-web", "tag:funkwhale-worker",
         "tag:gotosocial-web",
         "tag:peertube-web",
+        "tag:lemmy-web",    // pict-rs stores images in Garage S3
         "tag:stalwart",
         "tag:db-postgres",  // shared-db pg-backup service uses Garage too
       ],
