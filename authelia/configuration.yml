@@ -97,6 +97,17 @@ identity_providers:
         # Generate: openssl genrsa -out authelia/private.pem 4096
         key: {{ secret "/config/private.pem" | mindent 10 "|" | msquote }}
 
+    # ---- Claims policies ----
+    # Authelia 4.39+ no longer puts standard/extra claims (email, groups, name,
+    # …) in the ID TOKEN by default — they're only exposed at the userinfo
+    # endpoint. GoToSocial reads claims from the ID token, so without this it
+    # gets an empty email and account creation fails with "mail: no address".
+    # This policy injects the needed claims into the id_token for clients that
+    # reference it via `claims_policy`.
+    claims_policies:
+      gotosocial:
+        id_token: [email, email_verified, name, preferred_username, groups]
+
     # ---- OIDC clients ----
     # Register one client per app that integrates with Authelia.
     # client_id and client_secret are arbitrary strings; keep secrets long and
@@ -116,6 +127,7 @@ identity_providers:
         client_secret: "$pbkdf2-sha512$310000$VqrtAnvaIhtg2qHHdED7Kg$2KjSGgVMo9/NYFyke5xCRWNmjzuTMZdtbZWx4kRPsZBqUwpc8NSGioU.vuRzlMY/7CUKIi5Zc.rNozwplZGCLA"
         public: false
         authorization_policy: one_factor
+        claims_policy: gotosocial
         redirect_uris:
           - https://lalamatine.infinidim.net/auth/callback
         scopes: [openid, profile, email, groups]
