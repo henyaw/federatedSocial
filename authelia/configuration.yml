@@ -107,6 +107,8 @@ identity_providers:
     claims_policies:
       gotosocial:
         id_token: [email, email_verified, name, preferred_username, groups]
+      mastodon:
+        id_token: [email, email_verified, name, preferred_username, groups]
 
     # ---- OIDC clients ----
     # Register one client per app that integrates with Authelia.
@@ -137,17 +139,24 @@ identity_providers:
         response_types: [code]
 
     # --- Mastodon ---
-    # Mastodon does not natively support OIDC; use an OIDC proxy adapter
-    # (e.g. omniauth-openid-connect) or a forward-auth middleware instead.
-    # - client_id: mastodon
-    #   client_name: Mastodon
-    #   client_secret: "$pbkdf2-sha512$..."
-    #   public: false
-    #   authorization_policy: one_factor
-    #   redirect_uris:
-    #     - https://mastodon.example.com/auth/auth/openid_connect/callback
-    #   scopes: [openid, profile, email]
-    #   response_types: [code]
+    # Mastodon integrates OIDC via its bundled omniauth_openid_connect (env
+    # OIDC_* in mastodon/docker-compose.yml). The two placeholders below are
+    # rendered by bootstrap.sh into configuration.runtime.yml (gitignored):
+    #   __MASTODON_OIDC_HASH__  <- pbkdf2 hash derived from MASTODON_OIDC_CLIENT_SECRET
+    #   __MASTODON_URL__        <- MASTODON_DOMAIN from .env
+    # so no secret or real domain is ever committed; Mastodon holds the plaintext.
+    # (When SSO is off, a throwaway hash is rendered so this stays a valid—but
+    # unused—client, since Authelia requires at least one OIDC client.)
+      - client_id: mastodon
+        client_name: Mastodon
+        client_secret: "__MASTODON_OIDC_HASH__"
+        public: false
+        authorization_policy: one_factor
+        claims_policy: mastodon
+        redirect_uris:
+          - https://__MASTODON_URL__/auth/auth/openid_connect/callback
+        scopes: [openid, profile, email]
+        response_types: [code]
 
     # --- Funkwhale ---
     # Funkwhale supports OIDC via django-allauth. Configure the provider in
