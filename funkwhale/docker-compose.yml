@@ -52,6 +52,27 @@ x-api-env: &api-env
   EMAIL_CONFIG: ${FUNKWHALE_EMAIL_CONFIG:-consolemail://}
   DEFAULT_FROM_EMAIL: ${FUNKWHALE_DEFAULT_FROM_EMAIL:-noreply@${FUNKWHALE_DOMAIN}}
 
+  # ---- Object storage (S3 via Garage) — opt in ----
+  # Set FUNKWHALE_S3_ENABLED=true in .env to store uploads in Garage instead of
+  # the funkwhale-media volume. Funkwhale switches to S3 whenever
+  # AWS_ACCESS_KEY_ID is non-empty, so the creds + endpoint below are gated on
+  # the flag (blank => local volume). Reuses the shared GARAGE_* key.
+  # NOTE: Funkwhale has NO OIDC/SSO support upstream (OAuth2 + LDAP only), so
+  # this stack is S3-only — there is no Authelia client for it.
+  AWS_ACCESS_KEY_ID: ${FUNKWHALE_S3_ENABLED:+${GARAGE_ACCESS_KEY_ID}}
+  AWS_SECRET_ACCESS_KEY: ${FUNKWHALE_S3_ENABLED:+${GARAGE_SECRET_ACCESS_KEY}}
+  AWS_STORAGE_BUCKET_NAME: ${FUNKWHALE_S3_BUCKET:-funkwhale-music}
+  AWS_S3_REGION_NAME: ${GARAGE_REGION:-garage}
+  # Endpoint is built inline (Compose can't expand vars inside vars) and gated
+  # on the flag — empty unless S3 is enabled.
+  AWS_S3_ENDPOINT_URL: ${FUNKWHALE_S3_ENABLED:+http://${GARAGE_MAGIC_NAME}.${TS_TAILNET}:3900}
+  # Serve media through the front nginx via X-Accel-Redirect rather than handing
+  # browsers direct Garage URLs — Garage's S3 API is tailnet-only and signed, so
+  # direct URLs are unreachable publicly. Keeps S3 working with NO separate
+  # public media host (unlike Mastodon/Pixelfed); the front fetches from Garage
+  # over the tailnet (ACL: tag:funkwhale-web -> tag:garage:3900).
+  PROXY_MEDIA: "true"
+
 services:
 
   # -------------------------------------------------------------------
