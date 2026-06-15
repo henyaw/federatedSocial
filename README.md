@@ -551,6 +551,12 @@ GoToSocial support deploys the official **[GoToSocial](https://gotosocial.org)**
 - 📖 **Documentation** — <https://docs.gotosocial.org>
 - 💻 **Repository** — <https://codeberg.org/superseriousbusiness/gotosocial>
 
+Lemmy support deploys the official **[Lemmy](https://join-lemmy.org)** images (`dessalines/lemmy` + `dessalines/lemmy-ui`, pinned via `LEMMY_VERSION` in `.env`) with [pict-rs](https://git.asonix.dog/asonix/pict-rs) for image hosting — an AGPLv3-licensed federated link aggregator by the LemmyNet authors. Images can be stored in Garage S3 via pict-rs (`LEMMY_PICTRS_STORE=object_storage`). Note: **SSO is not yet wired** — Lemmy's OAuth/OIDC support is dev-branch only and absent from current stable releases (0.19.x); it'll be added when Lemmy ships it.
+
+- 🌐 **Website** — <https://join-lemmy.org>
+- 📖 **Documentation** — <https://join-lemmy.org/docs>
+- 💻 **Repository** — <https://github.com/LemmyNet/lemmy>
+
 ## License
 
 See `LICENSE` in the repo root.
