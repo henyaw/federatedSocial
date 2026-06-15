@@ -876,6 +876,17 @@ cmd_up() {
   if [[ "$stack" == "stalwart" ]]; then
     cmd_provision_stalwart
   fi
+
+  # Lemmy has no admin CLI — the FIRST visitor to the site claims the admin
+  # account via the web setup wizard. Surface that here so the operator isn't
+  # left guessing (do NOT pre-create an admin; it consumes site_setup and the
+  # real first visitor then lands on a login page instead of the wizard).
+  if [[ "$stack" == "lemmy" ]]; then
+    echo ""
+    echo "[bootstrap] Lemmy admin is created on FIRST web visit (no CLI)."
+    echo "[bootstrap] Visit https://${LEMMY_DOMAIN:-lemmy.example.com} and complete"
+    echo "[bootstrap] the setup wizard to claim the admin account."
+  fi
 }
 
 cmd_down() {
