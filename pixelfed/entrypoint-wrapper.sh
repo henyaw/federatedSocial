@@ -72,7 +72,6 @@ HORIZON_PREFIX=horizon-
 INSTANCE_DESCRIPTION="${INSTANCE_DESCRIPTION:-}"
 INSTANCE_CONTACT_EMAIL=${INSTANCE_CONTACT_EMAIL:-admin@${APP_DOMAIN}}
 INSTANCE_CONTACT_FORM=${INSTANCE_CONTACT_FORM:-false}
-TRUST_PROXIES=${TRUST_PROXIES:-100.64.0.0/10}
 
 # Registration
 OPEN_REGISTRATION=${OPEN_REGISTRATION:-false}
@@ -81,19 +80,6 @@ INSTANCE_CUR_REG=${INSTANCE_CUR_REG:-false}
 
 # API / OAuth — required for the Pixelfed mobile apps and third-party clients.
 OAUTH_ENABLED=true
-
-# Mail — defaults to "log" (writes outgoing mail to the container log; nothing
-# is delivered). Set PIXELFED_MAIL_MAILER=smtp and the PIXELFED_SMTP_* vars in
-# .env to deliver real mail (password resets, and signup confirmations if you
-# enable ENFORCE_EMAIL_VERIFICATION above).
-MAIL_MAILER=${MAIL_MAILER:-log}
-MAIL_HOST=${MAIL_HOST:-}
-MAIL_PORT=${MAIL_PORT:-587}
-MAIL_USERNAME=${MAIL_USERNAME:-}
-MAIL_PASSWORD=${MAIL_PASSWORD:-}
-MAIL_ENCRYPTION=${MAIL_ENCRYPTION:-null}
-MAIL_FROM_ADDRESS=${MAIL_FROM_ADDRESS:-pixelfed@${APP_DOMAIN}}
-MAIL_FROM_NAME="${MAIL_FROM_NAME:-Pixelfed}"
 
 # Federation
 ACTIVITY_PUB=${ACTIVITY_PUB:-true}
