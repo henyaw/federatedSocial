@@ -118,18 +118,21 @@ identity_providers:
 
     # --- GoToSocial ---
     # GTS configures OIDC from env/flags ONLY (it has no OIDC admin UI) — see
-    # gotosocial/docker-compose.yml GTS_OIDC_*. The client_secret here is the
-    # Authelia pbkdf2 HASH of GOTOSOCIAL_OIDC_CLIENT_SECRET in .env; GTS holds
-    # the matching plaintext. Regenerate with:
-    #   authelia crypto hash generate pbkdf2 --variant sha512 --password '<secret>'
+    # gotosocial/docker-compose.yml GTS_OIDC_*. The two placeholders below are
+    # rendered by bootstrap.sh into configuration.runtime.yml (gitignored):
+    #   __GTS_OIDC_HASH__   <- pbkdf2 hash derived from GOTOSOCIAL_OIDC_CLIENT_SECRET
+    #   __GOTOSOCIAL_URL__  <- GOTOSOCIAL_URL from .env
+    # so no secret or real domain is ever committed; GTS holds the plaintext.
+    # (When SSO is off, a throwaway hash is rendered so this stays a valid—but
+    # unused—client, since Authelia requires at least one OIDC client.)
       - client_id: gotosocial
         client_name: GoToSocial
-        client_secret: "$pbkdf2-sha512$310000$VqrtAnvaIhtg2qHHdED7Kg$2KjSGgVMo9/NYFyke5xCRWNmjzuTMZdtbZWx4kRPsZBqUwpc8NSGioU.vuRzlMY/7CUKIi5Zc.rNozwplZGCLA"
+        client_secret: "__GTS_OIDC_HASH__"
         public: false
         authorization_policy: one_factor
         claims_policy: gotosocial
         redirect_uris:
-          - https://lalamatine.infinidim.net/auth/callback
+          - https://__GOTOSOCIAL_URL__/auth/callback
         scopes: [openid, profile, email, groups]
         response_types: [code]
 
