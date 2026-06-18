@@ -532,6 +532,16 @@ Two common causes. First: you ran `docker compose -f <stack>/...` from the repo 
 
 Confirm Garage is up and healthy (`./bootstrap.sh ps garage`), that you ran `./bootstrap.sh provision-garage` and pasted the printed `GARAGE_ACCESS_KEY_ID`/`SECRET` into `.env`, and that `tag:garage` is in both your OAuth client tags and the ACL.
 
+**Funkwhale: the library counts uploads (size/track count) but the Tracks tab is empty**
+
+Funkwhale requires embedded metadata — at minimum an **artist** tag — on every uploaded file. Untagged files (common for DAW stem exports) are accepted and counted toward the library size, but fail import with `error_code: invalid_metadata` (`"artists.0.name": "This field is required"`) and never become playable tracks, so the **Tracks** tab stays empty. Tag the files (Artist + Title at minimum) with `kid3-cli`, `eyeD3`, or Picard and re-upload, then delete the errored uploads to clear the count. Check import state with:
+
+```bash
+docker exec <funkwhale-api> funkwhale-manage shell -c \
+  "from collections import Counter; from funkwhale_api.music.models import Upload; \
+   print(Counter(Upload.objects.values_list('import_status', flat=True)))"
+```
+
 **Sidecar shows "needs login" or doesn't appear in admin console**
 
 The OAuth client secret in `.env` is wrong, or the tag the sidecar is trying to advertise isn't allowed by the OAuth client. Check the OAuth client config in the admin console and confirm the tag is listed.
