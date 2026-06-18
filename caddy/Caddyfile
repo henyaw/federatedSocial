@@ -295,6 +295,30 @@ peertube.example.com {
   }
 }
 
+# Public media — ONLY when PEERTUBE_OBJECT_STORAGE_ENABLED=true.
+# PeerTube is the one app that needs TWO media hosts: it stores web videos and
+# HLS streaming playlists in SEPARATE buckets, and each media domain maps to
+# exactly one bucket. Set both in .env:
+#   PEERTUBE_OBJECT_STORAGE_WEB_VIDEOS_BASE_URL=https://video-peertube.example.com
+#   PEERTUBE_OBJECT_STORAGE_STREAMING_PLAYLISTS_BASE_URL=https://playlist-peertube.example.com
+# Both front Garage's WEB endpoint (:3902); header_up Host selects the bucket.
+# CORS (HLS playback fetches manifests + fmp4 segments cross-origin via MSE) is
+# set on the buckets by provision-garage (S3 PutBucketCors), NOT here — this
+# proxy just must not strip it. See README "Serving media to the public".
+video-peertube.example.com {
+  header Strict-Transport-Security "max-age=31536000"
+  reverse_proxy http://garage.tailfe8c.ts.net:3902 {
+    header_up Host peertube-web-videos.web.garage.local
+  }
+}
+
+playlist-peertube.example.com {
+  header Strict-Transport-Security "max-age=31536000"
+  reverse_proxy http://garage.tailfe8c.ts.net:3902 {
+    header_up Host peertube-streaming-playlists.web.garage.local
+  }
+}
+
 # ---------------------------------------------------------------------------
 # Lemmy
 # ---------------------------------------------------------------------------
