@@ -295,6 +295,44 @@ cmd_provision_garage() {
     fi
   done
 
+  # CORS on the HLS buckets (PeerTube only).
+  #
+  # PeerTube's HLS player fetches manifests and fmp4 byte-range segments
+  # cross-origin via fetch()/XHR (MSE), so the browser requires
+  # Access-Control-Allow-Origin on the media host — without it playback hangs on
+  # a spinner with no error and no timeout. Plain media (<img>/<video src> as
+  # used by Mastodon/Pixelfed/GoToSocial) does NOT need CORS, so only the HLS
+  # buckets get a rule. Garage honours per-bucket CORS on its web endpoint, but
+  # the garage CLI cannot set it — it's an S3 PutBucketCors call, which needs an
+  # S3 client and the access key (not the garage admin socket used by _g above).
+  local hls_buckets=(peertube-web-videos peertube-streaming-playlists)
+  local s3ep="http://${GARAGE_MAGIC_NAME}.${TS_TAILNET}:3900"
+  local cors_json='{"CORSRules":[{"AllowedOrigins":["*"],"AllowedMethods":["GET","HEAD"],"AllowedHeaders":["*"],"ExposeHeaders":["Content-Length","Content-Range","Accept-Ranges"],"MaxAgeSeconds":86400}]}'
+  echo "[bootstrap] Setting CORS on HLS (PeerTube) buckets..."
+  if [[ -z "${GARAGE_SECRET_ACCESS_KEY:-}" ]]; then
+    echo "[bootstrap]   skipped — GARAGE_SECRET_ACCESS_KEY not in .env yet."
+    echo "[bootstrap]   Add the key printed below to .env, then re-run provision-garage."
+  elif command -v aws >/dev/null 2>&1; then
+    local cf; cf=$(mktemp); printf '%s' "$cors_json" >"$cf"
+    for bucket in "${hls_buckets[@]}"; do
+      if AWS_ACCESS_KEY_ID="${GARAGE_ACCESS_KEY_ID}" AWS_SECRET_ACCESS_KEY="${GARAGE_SECRET_ACCESS_KEY}" \
+         aws --endpoint-url "$s3ep" --region "${GARAGE_REGION:-garage}" \
+         s3api put-bucket-cors --bucket "$bucket" --cors-configuration "file://${cf}" 2>/dev/null; then
+        echo "[bootstrap]   CORS set: ${bucket}"
+      else
+        echo "[bootstrap]   CORS failed: ${bucket} (set it manually — see note below)"
+      fi
+    done
+    rm -f "$cf"
+  else
+    echo "[bootstrap]   'aws' CLI not found — set CORS manually (required for HLS playback):"
+    for bucket in "${hls_buckets[@]}"; do
+      echo "[bootstrap]     aws --endpoint-url ${s3ep} --region ${GARAGE_REGION:-garage} \\"
+      echo "[bootstrap]       s3api put-bucket-cors --bucket ${bucket} \\"
+      echo "[bootstrap]       --cors-configuration '${cors_json}'"
+    done
+  fi
+
   local secret_key
   # 'key create' output includes "Secret key: <value>"; 'key info' does not.
   secret_key=$(echo "$key_output" | grep -i "Secret key" | awk '{print $NF}')
