@@ -30,13 +30,17 @@ Not every app is at the same level of polish. This stack ships templates for mor
 | **Stalwart** | mail | ✅ | 🟡 ³ | 🟡 Token-only SSO |
 | **Diaspora** | microblog | ✗ ⁴ | 🚧 | 🟡 Local media only |
 | **Funkwhale** | audio | ✅ | ✗ ⁶ | 🟡 S3 only |
-| **PeerTube** | video | 🚧 | 🚧 | 🚧 Untested |
+| **PeerTube** | video | ✅ ⁷ | 🚧 ⁸ | 🟡 S3 verified, SSO not wired |
 
 ¹ Pixelfed has no first-class OIDC upstream — SSO would be a custom job.
 ² Lemmy's OAuth/OIDC lives only on its dev branch; no stable release has it (checked through 0.19.19). S3 via pict-rs object storage works.
 ³ Stalwart v0.16 external OIDC is **token validation only** — a client presents an Authelia access token via `OAUTHBEARER` SASL; there is **no browser SSO** for the web-admin console. Admin/relay accounts keep password auth as break-glass.
 ⁴ Diaspora's S3 support is AWS-only (no custom endpoint), so it can't target Garage — media stays on a local volume.
 ⁶ Funkwhale has no OpenID Connect/SSO support upstream (OAuth2 provider + LDAP only) — OIDC login is a long-standing, unimplemented feature request. Media is served through the front nginx over the tailnet, so no public media host is needed.
+
+⁷ PeerTube's S3 client has **no path-style option** (upstream [#4455](https://github.com/Chocobozzz/PeerTube/issues/4455)) — it uses virtual-host addressing (`<bucket>.endpoint`), which MagicDNS can't resolve, so the move-to-object-storage job fails with `ENOTFOUND`. Set `PEERTUBE_OBJECT_STORAGE_ENDPOINT` to Garage's Tailscale **IP** to force path-style. Verified end-to-end (move + HLS playback via the public `*-media` hosts). Under HLS-only transcoding (the 7.x default) the `streaming-playlists` bucket is the one populated; `web-videos` stays empty.
+
+⁸ PeerTube does support OIDC, but only via a post-install admin-UI plugin (`peertube-plugin-auth-openid-connect`) — not wired or verified in this stack. The Authelia client stub is present (commented) in `authelia/configuration.yml`.
 
 Infrastructure stacks (`shared-db`, `garage`, `authelia`) are the foundation the verified apps run on and are considered working.
 
