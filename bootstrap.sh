@@ -238,7 +238,7 @@ cmd_provision_garage() {
   fi
 
   echo "[bootstrap] Ensuring buckets..."
-  local buckets=(pg-backups mastodon-media pixelfed-media gotosocial-media stalwart-mail peertube-web-videos peertube-streaming-playlists funkwhale-music)
+  local buckets=(pg-backups mastodon-media pixelfed-media gotosocial-media stalwart-mail peertube-web-videos peertube-streaming-playlists funkwhale-music lemmy-pictrs)
   for bucket in "${buckets[@]}"; do
     if _g bucket create "$bucket" 2>/dev/null; then
       echo "[bootstrap]   created: ${bucket}"
@@ -284,7 +284,9 @@ cmd_provision_garage() {
   # terminates public TLS and forwards to this endpoint — see
   # nginx/sites-available/garage-media.conf.
   #
-  # pg-backups and stalwart-mail are intentionally excluded — mail blobs are private.
+  # pg-backups, stalwart-mail, and lemmy-pictrs are intentionally excluded —
+  # mail blobs are private, and Lemmy serves images THROUGH pict-rs (which reads
+  # from S3 and proxies the bytes), so its bucket needs no anonymous web access.
   local public_buckets=(mastodon-media pixelfed-media gotosocial-media peertube-web-videos peertube-streaming-playlists funkwhale-music)
   echo "[bootstrap] Enabling website serving on public media buckets..."
   for bucket in "${public_buckets[@]}"; do
@@ -927,6 +929,17 @@ cmd_up() {
   #   ./bootstrap.sh provision-stalwart
   if [[ "$stack" == "stalwart" ]]; then
     cmd_provision_stalwart
+  fi
+
+  # Lemmy has no admin CLI — the FIRST visitor to the site claims the admin
+  # account via the web setup wizard. Surface that here so the operator isn't
+  # left guessing (do NOT pre-create an admin; it consumes site_setup and the
+  # real first visitor then lands on a login page instead of the wizard).
+  if [[ "$stack" == "lemmy" ]]; then
+    echo ""
+    echo "[bootstrap] Lemmy admin is created on FIRST web visit (no CLI)."
+    echo "[bootstrap] Visit https://${LEMMY_DOMAIN:-lemmy.example.com} and complete"
+    echo "[bootstrap] the setup wizard to claim the admin account."
   fi
 }
 
