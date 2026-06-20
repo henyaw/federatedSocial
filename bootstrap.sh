@@ -1319,11 +1319,173 @@ cmd_preflight() {
   echo "  budget and flags combinations that fit only with careful staging."
 }
 
+# ---------------------------------------------------------------------------
+# Wizard: .env generation (Phase B) — NON-DESTRUCTIVE BY CONSTRUCTION
+#   - No live .env        -> writes .env (0600)
+#   - Live .env exists     -> writes .env.new (0600); the live .env is ONLY READ
+#   Existing values are preserved VERBATIM (literal copy); only keys missing
+#   from the live .env are appended (filled). No docker/compose calls here.
+# ---------------------------------------------------------------------------
+
+# Secret generators for BLANK vars (key -> generator tag). Only consulted for
+# keys missing/empty in the live .env; existing secrets are never regenerated.
+declare -A SECRET_GEN=(
+  [POSTGRES_PASSWORD]=hex24
+  [PIXELFED_DB_PASSWORD]=hex24 [MASTODON_DB_PASSWORD]=hex24 [DIASPORA_DB_PASSWORD]=hex24
+  [FUNKWHALE_DB_PASSWORD]=hex24 [GOTOSOCIAL_DB_PASSWORD]=hex24 [PEERTUBE_DB_PASSWORD]=hex24
+  [STALWART_DB_PASSWORD]=hex24 [AUTHELIA_DB_PASSWORD]=hex24 [LEMMY_DB_PASSWORD]=hex24
+  [GARAGE_RPC_SECRET]=hex32 [PEERTUBE_SECRET]=hex32
+  [AUTHELIA_JWT_SECRET]=hex32 [AUTHELIA_SESSION_SECRET]=hex32
+  [AUTHELIA_STORAGE_ENCRYPTION_KEY]=hex32 [AUTHELIA_OIDC_HMAC_SECRET]=hex32
+  [MASTODON_OIDC_CLIENT_SECRET]=hex32 [GOTOSOCIAL_OIDC_CLIENT_SECRET]=hex32
+  [STALWART_OIDC_CLIENT_SECRET]=hex32 [STALWART_FALLBACK_ADMIN_SECRET]=hex24
+  [STALWART_RELAY_PASSWORD]=hex24 [FUNKWHALE_DJANGO_SECRET_KEY]=hex32
+  [MASTODON_SECRET_KEY_BASE]=hex64 [MASTODON_OTP_SECRET]=hex64
+  [PIXELFED_APP_KEY]=pixelkey
+)
+
+gen_secret() {                       # gen_secret <tag>
+  case "$1" in
+    hex24)    openssl rand -hex 24 ;;
+    hex32)    openssl rand -hex 32 ;;
+    hex64)    openssl rand -hex 64 ;;
+    pixelkey) echo "base64:$(openssl rand -base64 32)" ;;
+    *)        echo "" ;;
+  esac
+}
+
+# Value for a key MISSING from the live .env.
+# Precedence: wizard-collected (WIZ_<KEY>) > generated secret > example default.
+resolve_new_value() {                # resolve_new_value <key> <example_default>
+  local key="$1" exdefault="$2" wizvar="WIZ_$1"
+  if   [[ -n "${!wizvar:-}" ]];            then printf '%s' "${!wizvar}"
+  elif [[ -n "${SECRET_GEN[$key]:-}" ]];   then gen_secret "${SECRET_GEN[$key]}"
+  else                                          printf '%s' "$exdefault"
+  fi
+}
+
+# LHS var names from an env-format file.
+_env_keys() { grep -oE '^[A-Za-z_][A-Za-z0-9_]*=' "$1" 2>/dev/null | sed 's/=$//'; }
+
+# Render a fresh env from the example (no live .env). Order/comments preserved.
+render_fresh() {                     # render_fresh <example_file>
+  local line key
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "$line" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
+      key="${BASH_REMATCH[1]}"
+      printf '%s=%s\n' "$key" "$(resolve_new_value "$key" "${BASH_REMATCH[2]}")"
+    else
+      printf '%s\n' "$line"
+    fi
+  done < "$1"
+}
+
+# out = VERBATIM copy of live + keys present in example but missing from live,
+# appended (filled). The live file is ONLY read (cat).
+render_additive() {                  # render_additive <live_env> <example_file>
+  cat "$1"
+  local k exdefault added=0
+  while IFS= read -r k; do
+    [[ -n "$k" ]] || continue
+    exdefault="$(grep -m1 -E "^${k}=" "$2" | sed -E "s/^${k}=//")"
+    if (( added == 0 )); then
+      printf '\n# ---- added by bootstrap.sh wizard (%s) ----\n' "$(date -u +%F)"
+      added=1
+    fi
+    printf '%s=%s\n' "$k" "$(resolve_new_value "$k" "$exdefault")"
+  done < <(comm -23 <(_env_keys "$2" | sort -u) <(_env_keys "$1" | sort -u))
+}
+
+# Interactive essentials. Skipped automatically when not on a TTY (so tests and
+# pipelines stay non-interactive). Fills WIZ_<KEY> used by resolve_new_value.
+collect_essentials() {
+  if [[ ! -t 0 ]]; then
+    echo "[bootstrap] (non-interactive: skipping prompts; existing values preserved)"
+    return 0
+  fi
+  local base
+  read -r -p "  Base domain (apps become <app>.<base>) [${WIZ_BASE_DOMAIN:-}]: " base
+  base="${base:-${WIZ_BASE_DOMAIN:-}}"
+  if [[ -n "$base" ]]; then
+    WIZ_BASE_DOMAIN="$base"
+    WIZ_PIXELFED_DOMAIN="pixelfed.$base"; WIZ_MASTODON_DOMAIN="mastodon.$base"
+    WIZ_FUNKWHALE_DOMAIN="funkwhale.$base"; WIZ_PEERTUBE_DOMAIN="peertube.$base"
+    WIZ_LEMMY_DOMAIN="lemmy.$base";        WIZ_AUTHELIA_DOMAIN="auth.$base"
+    WIZ_GOTOSOCIAL_URL="gotosocial.$base"; WIZ_DIASPORA_URL="https://diaspora.$base/"
+    WIZ_STALWART_DOMAIN="$base"
+    echo "    derived: mastodon.$base, pixelfed.$base, auth.$base, lemmy.$base, … (editable in the generated env)"
+  fi
+  read -r -p "  SMTP relay host (blank = no email for now) [${SMTP_HOST:-}]: " WIZ_SMTP_HOST
+  if [[ -n "${WIZ_SMTP_HOST:-}" ]]; then
+    read -r -p "  SMTP from-name/address [${SMTP_FROM_NAME:-}]: " WIZ_SMTP_FROM_NAME
+  fi
+}
+
+# Write the resume state (NON-SECRET choices only).
+write_wizard_state() {
+  local f="${REPO_ROOT}/.wizard-state"
+  {
+    echo "# bootstrap.sh wizard state — non-secret choices only (gitignored)."
+    echo "WIZARD_TS=$(date -u +%FT%TZ)"
+    [[ -n "${WIZ_BASE_DOMAIN:-}"     ]] && echo "WIZARD_BASE_DOMAIN=${WIZ_BASE_DOMAIN}"
+    [[ -n "${WIZ_SMTP_HOST:-}"       ]] && echo "WIZARD_SMTP_HOST=${WIZ_SMTP_HOST}"
+    [[ -n "${WIZ_SMTP_FROM_NAME:-}"  ]] && echo "WIZARD_SMTP_FROM_NAME=${WIZ_SMTP_FROM_NAME}"
+    [[ -n "${TS_TAILNET_DETECTED:-}" ]] && echo "WIZARD_TAILNET=${TS_TAILNET_DETECTED}"
+  } > "$f"
+  chmod 600 "$f"
+}
+
+# Safe writer: choose target, guard against the live .env, atomic write.
+generate_env() {
+  local example="${REPO_ROOT}/.env.example" target tmp
+  [[ -f "$example" ]] || die ".env.example not found at ${example}"
+
+  if [[ -f "$ENV_FILE" ]]; then target="${REPO_ROOT}/.env.new"; else target="$ENV_FILE"; fi
+  # Hard guard: never write the live .env when it exists.
+  if [[ -f "$ENV_FILE" && "$target" -ef "$ENV_FILE" ]]; then
+    die "refusing to write the live .env (target resolved to ${ENV_FILE})"
+  fi
+
+  tmp="$(mktemp "${REPO_ROOT}/.env.wizard.XXXXXX")"
+  if [[ -f "$ENV_FILE" ]]; then
+    render_additive "$ENV_FILE" "$example" > "$tmp"
+  else
+    render_fresh "$example" > "$tmp"
+  fi
+  chmod 600 "$tmp"
+  mv -f "$tmp" "$target"
+
+  if [[ "$target" == "$ENV_FILE" ]]; then
+    echo "[bootstrap] Wrote fresh ${ENV_FILE} (0600)."
+  else
+    echo "[bootstrap] Live .env left UNTOUCHED. Wrote ${target} (0600) for review."
+    if diff -q "$ENV_FILE" "$target" >/dev/null 2>&1; then
+      echo "[bootstrap]   No changes needed — .env.new is identical to your .env."
+    else
+      echo "[bootstrap]   New/changed lines (existing secrets are preserved verbatim):"
+      diff "$ENV_FILE" "$target" | grep -E '^[<>]' | sed 's/^/    /' || true
+      echo "[bootstrap]   Review, then merge:  mv ${target} ${ENV_FILE}"
+    fi
+  fi
+}
+
+cmd_wizard() {
+  detect_specs
+  echo "[bootstrap] Wizard — generate .env (non-destructive)"
+  echo ""
+  collect_essentials
+  echo ""
+  generate_env
+  write_wizard_state
+  echo "[bootstrap] Saved non-secret choices to ${REPO_ROOT}/.wizard-state"
+}
+
 usage() {
   cat <<EOF
 Usage: ./bootstrap.sh <command> [args]
 
   preflight                                 Machine + Tailscale check and RAM-budget capacity report
+  wizard                                    Generate .env interactively (writes .env.new if one exists; never overwrites)
   up                  <stack>               Bring up a stack
   down                <stack>               Tear down a stack
   logs                <stack> [service]     Tail logs (Ctrl-C to stop)
@@ -1361,6 +1523,7 @@ shift || true
 
 case "$command" in
   preflight)    cmd_preflight ;;
+  wizard)       cmd_wizard ;;
   up)           cmd_up "$@" ;;
   down)         cmd_down "$@" ;;
   logs)         cmd_logs "$@" ;;
