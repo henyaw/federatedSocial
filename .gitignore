@@ -1,6 +1,12 @@
 # Operator's real configuration — never commit
 .env
 
+# Wizard-generated artifacts (never commit): the review copy, resume state,
+# and the atomic-write temp files.
+.env.new
+.wizard-state
+.env.wizard.*
+
 # Per-subdir .env symlinks (bootstrap.sh creates these automatically on 'up').
 # Gitignored so they are never accidentally committed.
 shared-db/.env
