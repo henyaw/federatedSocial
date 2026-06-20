@@ -458,7 +458,7 @@ Garage gives you a place to put backups that isn't the same disk as your data. T
 - **Database**: `backup/pg-backup.sh` on a cron (see below). This is the one piece worth automating — everything else can be rebuilt.
 - **Media**: already in Garage if you've opted apps into S3 storage; replicate it to a second node or an external bucket for off-site safety.
 - **Redis**: no backup needed — every app in this stack treats it as a cache/queue, not a source of truth.
-- **`.env`**: the only thing that must live outside Garage. Keep a copy in a password manager or encrypted off-site store — it holds every secret, and recovery starts here.
+- **`.env`**: the only thing that must live outside Garage. Keep a copy in a password manager or encrypted off-site store — it holds every secret, and recovery starts here. `bootstrap.sh` keeps the on-disk copy at `chmod 600`; leave it in place — Compose interpolates `${VAR}` from it on every `up`, so the stack can't start (or recreate a container after a reboot) without it.
 - **Tailscale ACL JSON**: export it from the admin console.
 
 > **Untested:** `backup/pg-backup.sh` and `backup/pg-restore.sh` are templated but have not yet been exercised against a live stack. Do a manual run and confirm the object lands in the bucket (and a restore into a throwaway cluster) before relying on the cron.
@@ -483,14 +483,24 @@ You should see it dump, upload, and report the key. Confirm the object exists:
 ./backup/pg-restore.sh --list      # lists what's in the pg-backups bucket
 ```
 
-Then schedule it. Edit the operator's crontab (`crontab -e`) and add a nightly run at 03:00, with `MAILTO` so failures reach you (the script exits non-zero on any failure):
+Then schedule it. The easiest way is the interactive helper, which installs the job in your own crontab:
+
+```bash
+./bootstrap.sh backup-cron
+```
+
+It prompts for the alert email (defaulting to `SMTP_FROM_NAME` from `.env`) and the hour to run (default 03:00), then writes a self-contained, idempotent block to your crontab — re-running it updates the block rather than duplicating it.
+
+Prefer to do it by hand? Edit the operator's crontab (`crontab -e`) and add a nightly run at 03:00, with `MAILTO` so failures reach you (the script exits non-zero on any failure):
 
 ```cron
 MAILTO=you@example.com
-0 3 * * * cd /path/to/federated-social && ./backup/pg-backup.sh >> /var/log/pg-backup.log 2>&1
+0 3 * * * cd /path/to/federated-social && ./backup/pg-backup.sh >> log/pg-backup.log 2>&1
 ```
 
 Use an absolute path to the repo — cron runs with a minimal environment. The script sources the repo-root `.env` itself, so no extra env setup is needed in the crontab.
+
+Logs go to the repo-local `log/` directory (auto-created by `bootstrap.sh`, gitignored) — **no root or `/var/log` access required**, so this works for an unprivileged shell account. If you *do* have root and would rather run it as a system service, a `systemd` timer is a tidy alternative (journald logging, survives reboots).
 
 #### Recover
 

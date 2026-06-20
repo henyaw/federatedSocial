@@ -37,6 +37,11 @@ authelia/private.pem
 # 'git pull' never overwrites a live user list.
 authelia/users.yml
 
+# Operator-local logs (e.g. pg-backup.log). The directory is tracked via
+# log/.gitkeep so it exists on a fresh clone; its contents are not.
+log/*
+!log/.gitkeep
+
 # Editor backups
 *.swp
 *.swo
