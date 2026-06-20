@@ -38,6 +38,9 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${REPO_ROOT}/.env"
+# Operator-local log directory. Rootless by design: things like the pg-backup
+# cron log here instead of /var/log, so an unprivileged shell account works.
+mkdir -p "${REPO_ROOT}/log"
 ALL_STACKS=(shared-db garage pixelfed mastodon diaspora funkwhale gotosocial peertube stalwart authelia lemmy)
 # Stacks that need a Postgres DB provisioned before starting.
 DB_STACKS=(pixelfed mastodon diaspora funkwhale gotosocial peertube stalwart authelia lemmy)
@@ -45,6 +48,13 @@ DB_STACKS=(pixelfed mastodon diaspora funkwhale gotosocial peertube stalwart aut
 # Load .env — required before any command.
 if [[ -f "$ENV_FILE" ]]; then
   set -a; source "$ENV_FILE"; set +a
+  # .env holds every secret in the stack — keep it owner-only. A fresh scp
+  # often lands it 0644 (world-readable on a shared box); tighten in place and
+  # say so, so the operator knows it happened.
+  if [[ "$(stat -c '%a' "$ENV_FILE" 2>/dev/null)" != "600" ]]; then
+    chmod 600 "$ENV_FILE" 2>/dev/null \
+      && echo "[bootstrap] Tightened ${ENV_FILE} permissions to 600 (it holds every secret)."
+  fi
 else
   echo "Error: ${ENV_FILE} not found." >&2
   echo "" >&2
@@ -1111,6 +1121,76 @@ You can reset the root password instead:
   esac
 }
 
+cmd_backup_cron() {
+  # Wizard step: install/update the nightly pg-backup cron in the operator's
+  # OWN crontab. Rootless by design — logs to the repo-local log/ dir, never
+  # /var/log — so it works for an unprivileged shell account.
+  local script="${REPO_ROOT}/backup/pg-backup.sh"
+  [[ -f "$script" ]] || die "Not found: ${script}"
+
+  echo "[bootstrap] Configure the nightly Postgres backup (pg-backup.sh)."
+  echo ""
+
+  # --- Alert email (cron MAILTO) -------------------------------------------
+  # Default to SMTP_FROM_NAME from .env; require something email-shaped so a
+  # placeholder like 'Federated Social' can't slip in as the recipient.
+  local default_email="${SMTP_FROM_NAME:-}" email=""
+  while :; do
+    if [[ -n "$default_email" ]]; then
+      read -r -p "  Email for failure alerts [${default_email}]: " email
+      email="${email:-$default_email}"
+    else
+      read -r -p "  Email for failure alerts: " email
+    fi
+    [[ "$email" == *@* ]] && break
+    echo "  '${email}' isn't an email address (need name@domain) — try again."
+    default_email=""
+  done
+
+  # --- Run time -------------------------------------------------------------
+  local default_hour=3 hour
+  read -r -p "  Hour to run, 0-23 [${default_hour}]: " hour
+  hour="${hour:-$default_hour}"
+  [[ "$hour" =~ ^([0-9]|1[0-9]|2[0-3])$ ]] || die "Invalid hour '${hour}' — must be 0-23."
+
+  # --- Compose the managed crontab block -----------------------------------
+  local cmd_line="cd ${REPO_ROOT} && ./backup/pg-backup.sh >> log/pg-backup.log 2>&1"
+  local cron_line="0 ${hour} * * * ${cmd_line}"
+  local begin="# >>> federatedSocial pg-backup (managed by bootstrap.sh) >>>"
+  local end="# <<< federatedSocial pg-backup (managed by bootstrap.sh) <<<"
+
+  # Idempotent: strip any previously-managed block, then append the fresh one.
+  # (MAILTO lives INSIDE the block on its own line — no inline comment, since
+  # cron treats the whole RHS of a MAILTO= line as the value.)
+  local current rest
+  current="$(crontab -l 2>/dev/null || true)"
+  rest="$(printf '%s\n' "$current" | awk -v b="$begin" -v e="$end" '
+    $0==b {skip=1; next} $0==e {skip=0; next} skip!=1 {print}')"
+
+  # Warn about a pre-existing hand-written pg-backup line outside our markers,
+  # so the operator can remove it rather than end up running the backup twice.
+  if printf '%s\n' "$rest" | grep -q 'pg-backup\.sh'; then
+    echo ""
+    echo "[bootstrap] Note: found an existing (unmanaged) pg-backup line in your crontab."
+    echo "[bootstrap]   Leaving it untouched; remove it with 'crontab -e' to avoid double runs."
+  fi
+
+  {
+    [[ -n "${rest//[[:space:]]/}" ]] && printf '%s\n' "$rest"
+    echo "$begin"
+    echo "MAILTO=${email}"
+    echo "$cron_line"
+    echo "$end"
+  } | crontab -
+
+  echo ""
+  echo "[bootstrap] Installed in $(whoami)'s crontab:"
+  echo "             ${cron_line}"
+  echo "[bootstrap]   alerts → ${email}"
+  echo "[bootstrap]   logs   → ${REPO_ROOT}/log/pg-backup.log"
+  echo "[bootstrap] Inspect: crontab -l   ·   Edit/remove: crontab -e"
+}
+
 usage() {
   cat <<EOF
 Usage: ./bootstrap.sh <command> [args]
@@ -1123,6 +1203,7 @@ Usage: ./bootstrap.sh <command> [args]
   provision-garage                          Idempotent Garage layout + bucket + key setup
   provision-stalwart                        Configure Stalwart via JMAP (auto-run by 'up stalwart')
   user-create         <app> <user> <email>  Create an admin user
+  backup-cron                               Install the nightly pg-backup cron (interactive)
 
 Stacks: ${ALL_STACKS[*]}
 
@@ -1134,6 +1215,7 @@ Examples:
   ./bootstrap.sh user-create funkwhale alice alice@example.com
   ./bootstrap.sh ps
   ./bootstrap.sh logs mastodon web
+  ./bootstrap.sh backup-cron
 
 Note: 'up' calls provision-db automatically when shared-db is running.
       Run shared-db first, then 'up <app>' — the DB will be ready.
@@ -1156,6 +1238,7 @@ case "$command" in
   provision-garage)      cmd_provision_garage ;;
   provision-stalwart)    cmd_provision_stalwart ;;
   user-create)           cmd_user_create "$@" ;;
+  backup-cron)           cmd_backup_cron ;;
   help|--help|-h) usage ;;
   *) echo "Unknown command: ${command}"; echo ""; usage; exit 1 ;;
 esac
