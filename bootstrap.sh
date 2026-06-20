@@ -45,6 +45,21 @@ ALL_STACKS=(shared-db garage pixelfed mastodon diaspora funkwhale gotosocial pee
 # Stacks that need a Postgres DB provisioned before starting.
 DB_STACKS=(pixelfed mastodon diaspora funkwhale gotosocial peertube stalwart authelia lemmy)
 
+# --- Wizard resource model -------------------------------------------------
+# Per-stack low-use steady-state RAM budgets (MB), each INCLUDING its Tailscale
+# sidecar. Used to gate app selection so an operator can't assemble a stack
+# that won't fit RAM. First-pass numbers (validated against a 4G box running
+# shared-db+diaspora+pixelfed+mastodon staged); tune freely.
+declare -A STACK_BUDGET=(
+  [shared-db]=450 [authelia]=192 [garage]=256 [gotosocial]=256 [stalwart]=320
+  [lemmy]=512 [pixelfed]=768 [funkwhale]=768 [diaspora]=900 [peertube]=1024
+  [mastodon]=1536
+)
+HOST_RESERVE_MB=500                # kernel, dockerd, host tailscaled, sshd, headroom
+MANDATORY_STACK="shared-db"        # always included — the Postgres/Redis base
+OPTIONAL_INFRA=(garage stalwart authelia)
+FEDERATED_APPS=(gotosocial lemmy pixelfed funkwhale diaspora peertube mastodon)  # light → heavy
+
 # Load .env — required before any command.
 if [[ -f "$ENV_FILE" ]]; then
   set -a; source "$ENV_FILE"; set +a
@@ -1204,10 +1219,111 @@ cmd_backup_cron() {
   echo "[bootstrap] Inspect: crontab -l   ·   Edit/remove: crontab -e"
 }
 
+# ---------------------------------------------------------------------------
+# Wizard: machine specs, base checks, resource model
+# ---------------------------------------------------------------------------
+
+# Human-friendly MB: 1536 -> "1.5G", 768 -> "768M".
+fmt_mb() {
+  local mb="$1"
+  if (( mb >= 1024 )); then awk -v m="$mb" 'BEGIN{printf "%.1fG", m/1024}'; else echo "${mb}M"; fi
+}
+
+# Populate MEM_TOTAL_MB / CPU_CORES / DISK_FREE_GB / AVAILABLE_MB.
+# FORCE_MEMTOTAL_MB / FORCE_CORES override detection (for testing the gating).
+detect_specs() {
+  if [[ -n "${FORCE_MEMTOTAL_MB:-}" ]]; then
+    MEM_TOTAL_MB="$FORCE_MEMTOTAL_MB"
+  else
+    MEM_TOTAL_MB=$(( $(awk '/^MemTotal:/{print $2}' /proc/meminfo) / 1024 ))
+  fi
+  CPU_CORES="${FORCE_CORES:-$(nproc 2>/dev/null || echo 1)}"
+  DISK_FREE_GB=$(df -BG --output=avail "$REPO_ROOT" 2>/dev/null | awk 'NR==2{gsub(/G/,"");print $1+0}')
+  [[ -n "$DISK_FREE_GB" ]] || DISK_FREE_GB="?"
+  AVAILABLE_MB=$(( MEM_TOTAL_MB - HOST_RESERVE_MB - STACK_BUDGET[$MANDATORY_STACK] ))
+}
+
+# classify_stack <stack> <remaining_mb> -> prints: ok | warn | block
+#   block = can't fit even on an empty stack (budget > total available)
+#   warn  = fits only by eating into what's left (stage carefully)
+#   ok    = comfortably within remaining budget
+classify_stack() {
+  local budget="${STACK_BUDGET[$1]:-0}" remaining="$2"
+  if   (( budget > AVAILABLE_MB )); then echo block
+  elif (( budget > remaining   )); then echo warn
+  else                                   echo ok
+  fi
+}
+
+# Base check: Docker + compose v2 present.
+check_docker() {
+  command -v docker >/dev/null || { echo "  ✗ docker not found — install Docker Engine first"; return 1; }
+  if docker compose version >/dev/null 2>&1; then
+    echo "  ✓ docker + compose v2"
+  else
+    echo "  ✗ 'docker compose' (v2) unavailable — update Docker"; return 1
+  fi
+}
+
+# Base check: Tailscale present, up, and derive the tailnet (MagicDNS suffix).
+# Sets TS_TAILNET_DETECTED for later steps.
+check_tailscale() {
+  TS_TAILNET_DETECTED=""
+  if ! command -v tailscale >/dev/null; then
+    echo "  ✗ tailscale not installed — every stack runs a Tailscale sidecar; install it first"
+    return 1
+  fi
+  local st; st=$(tailscale status 2>&1 || true)
+  if echo "$st" | grep -qiE 'logged out|NeedsLogin|stopped|failed to connect'; then
+    echo "  ✗ tailscaled not logged in — run: sudo tailscale up"
+    return 1
+  fi
+  command -v jq >/dev/null && \
+    TS_TAILNET_DETECTED=$(tailscale status --json 2>/dev/null | jq -r '.MagicDNSSuffix // empty')
+  if [[ -n "$TS_TAILNET_DETECTED" ]]; then
+    echo "  ✓ tailscale up — tailnet: ${TS_TAILNET_DETECTED}"
+  else
+    echo "  ✓ tailscale up — (tailnet name not auto-detected; the wizard will prompt)"
+  fi
+}
+
+cmd_preflight() {
+  detect_specs
+  echo "[bootstrap] Preflight — machine + capacity check"
+  echo ""
+  echo "  RAM:   $(fmt_mb "$MEM_TOTAL_MB") total${FORCE_MEMTOTAL_MB:+ (forced for testing)}"
+  echo "  CPU:   ${CPU_CORES} core(s)"
+  echo "  Disk:  ${DISK_FREE_GB}G free at ${REPO_ROOT}"
+  echo ""
+  echo "  Base checks:"
+  check_docker    || true
+  check_tailscale || true
+  echo ""
+  echo "  RAM budget: $(fmt_mb "$MEM_TOTAL_MB") − $(fmt_mb "$HOST_RESERVE_MB") host − $(fmt_mb "${STACK_BUDGET[$MANDATORY_STACK]}") shared-db = $(fmt_mb "$AVAILABLE_MB") for apps"
+  echo ""
+  if (( AVAILABLE_MB <= 0 )); then
+    echo "  ⚠ Not enough RAM for shared-db plus apps. A larger box is recommended."
+    return 0
+  fi
+  echo "  Per-stack fit (added to an otherwise empty stack):"
+  printf "    %-11s %7s   %s\n" "STACK" "BUDGET" "FITS?"
+  local s
+  for s in "${OPTIONAL_INFRA[@]}" "${FEDERATED_APPS[@]}"; do
+    case "$(classify_stack "$s" "$AVAILABLE_MB")" in
+      ok|warn) printf "    %-11s %7s   ✓ yes\n"        "$s" "$(fmt_mb "${STACK_BUDGET[$s]}")" ;;
+      block)   printf "    %-11s %7s   ✗ won't fit\n"  "$s" "$(fmt_mb "${STACK_BUDGET[$s]}")" ;;
+    esac
+  done
+  echo ""
+  echo "  shared-db is always included. Final 'wizard' selection enforces a running RAM"
+  echo "  budget and flags combinations that fit only with careful staging."
+}
+
 usage() {
   cat <<EOF
 Usage: ./bootstrap.sh <command> [args]
 
+  preflight                                 Machine + Tailscale check and RAM-budget capacity report
   up                  <stack>               Bring up a stack
   down                <stack>               Tear down a stack
   logs                <stack> [service]     Tail logs (Ctrl-C to stop)
@@ -1221,6 +1337,7 @@ Usage: ./bootstrap.sh <command> [args]
 Stacks: ${ALL_STACKS[*]}
 
 Examples:
+  ./bootstrap.sh preflight
   ./bootstrap.sh up shared-db
   ./bootstrap.sh up mastodon
   ./bootstrap.sh provision-db peertube
@@ -1243,6 +1360,7 @@ command="${1:-help}"
 shift || true
 
 case "$command" in
+  preflight)    cmd_preflight ;;
   up)           cmd_up "$@" ;;
   down)         cmd_down "$@" ;;
   logs)         cmd_logs "$@" ;;
