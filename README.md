@@ -70,7 +70,9 @@ Your reverse proxy on the host receives public HTTPS traffic and forwards it to 
 ./bootstrap.sh ps   [stack]               Show container status
 ./bootstrap.sh provision-db <app>         Idempotent DB role + database setup
 ./bootstrap.sh provision-garage           Idempotent Garage layout + buckets + key
+./bootstrap.sh provision-stalwart         Configure Stalwart via JMAP (auto-run by 'up stalwart')
 ./bootstrap.sh user-create <app> <user> <email>   Create an admin user
+./bootstrap.sh backup-cron                Install the nightly pg-backup cron (interactive)
 ```
 
 Stacks: `shared-db`, `garage`, `stalwart`, `authelia`, `pixelfed`, `mastodon`, `diaspora`, `funkwhale`, `gotosocial`, `peertube`, `lemmy`.
@@ -205,7 +207,7 @@ This file is gitignored. Keep it safe — losing it invalidates all active sessi
 ./bootstrap.sh up authelia
 ```
 
-`bootstrap.sh` generates `authelia/configuration.runtime.yml` from your `.env`, verifies `private.pem` exists, and creates an empty `authelia/users.yml` placeholder if none is present. See [Authelia: first-boot configuration](#authelia-first-boot-configuration) to add users and register OIDC clients.
+`bootstrap.sh` generates `authelia/configuration.runtime.yml` from your `.env` — including the pbkdf2 client-secret hashes for every templated OIDC client (GoToSocial, Mastodon, PeerTube; an unset `*_OIDC_CLIENT_SECRET` renders a throwaway hash so the client stays a valid-but-unused registration) — verifies `private.pem` exists, and creates an empty `authelia/users.yml` placeholder if none is present. See [Authelia: first-boot configuration](#authelia-first-boot-configuration) to add users and register OIDC clients.
 
 ### 9. Bring up each app stack
 
@@ -402,7 +404,7 @@ Edit `authelia/configuration.yml` and uncomment the client blocks for the apps y
 - `client_secret` — generate with `openssl rand -hex 32`, then hash with `authelia crypto hash generate`
 - `redirect_uris` — the exact callback URL the app expects (documented in each app's OIDC setup guide)
 
-Run `./bootstrap.sh up authelia` after editing — it regenerates `configuration.runtime.yml` and restarts the container.
+Run `./bootstrap.sh up authelia` after editing — it regenerates `configuration.runtime.yml`. If the container was already running, follow up with `docker compose restart authelia` (from `authelia/`): Authelia only reads the mounted config at startup, and `up` on a running stack won't recreate the container.
 
 ### Point apps at Authelia
 
@@ -461,7 +463,7 @@ Garage gives you a place to put backups that isn't the same disk as your data. T
 - **`.env`**: the only thing that must live outside Garage. Keep a copy in a password manager or encrypted off-site store — it holds every secret, and recovery starts here. `bootstrap.sh` keeps the on-disk copy at `chmod 600`; leave it in place — Compose interpolates `${VAR}` from it on every `up`, so the stack can't start (or recreate a container after a reboot) without it.
 - **Tailscale ACL JSON**: export it from the admin console.
 
-> **Untested:** `backup/pg-backup.sh` and `backup/pg-restore.sh` are templated but have not yet been exercised against a live stack. Do a manual run and confirm the object lands in the bucket (and a restore into a throwaway cluster) before relying on the cron.
+> **Validated (2026-07-11):** the nightly cron has run against a live stack for two weeks, and a production dump pulled back from Garage restored cleanly into a throwaway `postgres:16-alpine` cluster — every database and role replayed, app roles authenticate with their `.env` passwords, and the only `psql` error was the expected `role "postgres" already exists`. Still do the manual first run below on a new deployment. Known failure mode: if the Garage endpoint is unreachable at run time the script exits non-zero without pruning anything — set `MAILTO` so those nights reach you, and check `log/pg-backup.log` if an expected object is missing.
 
 #### What the backup script does
 

@@ -2,13 +2,6 @@
 # pg-backup.sh — dump all Postgres databases and ship the gzipped dump to the
 # Garage `pg-backups` bucket over the tailnet. Designed for unattended cron.
 #
-# ############################################################################
-# # UNTESTED end-to-end. The logic is straightforward (pg_dumpall | gzip |   #
-# # aws s3 cp -) but it has not been run against a live stack. Do a manual    #
-# # run and verify the object lands in the bucket before trusting the cron.   #
-# # See the README "Backups" section for the test + recovery walkthrough.     #
-# ############################################################################
-#
 # What it does:
 #   1. pg_dumpall (roles + all databases) inside the shared-db postgres
 #      container — the same container bootstrap.sh provisions into.

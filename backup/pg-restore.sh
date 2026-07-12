@@ -2,10 +2,10 @@
 # pg-restore.sh — restore a Postgres dump produced by pg-backup.sh.
 #
 # ############################################################################
-# # UNTESTED end-to-end, and DESTRUCTIVE. A pg_dumpall restore replays roles  #
-# # and databases into the live cluster — it can clobber existing data and    #
-# # roles. Read what it prints, confirm the prompt, and prefer a throwaway    #
-# # test cluster the first time. See the README "Backups" section.            #
+# # DESTRUCTIVE. A pg_dumpall restore replays roles and databases into the    #
+# # live cluster — it can clobber existing data and roles. Read what it       #
+# # prints, confirm the prompt, and prefer a throwaway test cluster the       #
+# # first time. See the README "Backups" section.                             #
 # ############################################################################
 #
 # Usage:
