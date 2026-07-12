@@ -1194,7 +1194,10 @@ cmd_backup_cron() {
   [[ "$hour" =~ ^([0-9]|1[0-9]|2[0-3])$ ]] || die "Invalid hour '${hour}' — must be 0-23."
 
   # --- Compose the managed crontab block -----------------------------------
-  local cmd_line="cd ${REPO_ROOT} && ./backup/pg-backup.sh >> log/pg-backup.log 2>&1"
+  # cron emails OUTPUT, not exit codes — with everything redirected into the
+  # log, a failure would never reach MAILTO. The || echo puts one line on
+  # stdout only when the script fails, so that's the only mail cron sends.
+  local cmd_line="cd ${REPO_ROOT} && ./backup/pg-backup.sh >> log/pg-backup.log 2>&1 || echo \"pg-backup FAILED on \$(hostname) — see ${REPO_ROOT}/log/pg-backup.log\""
   local cron_line="0 ${hour} * * * ${cmd_line}"
   local begin="# >>> federatedSocial pg-backup (managed by bootstrap.sh) >>>"
   local end="# <<< federatedSocial pg-backup (managed by bootstrap.sh) <<<"

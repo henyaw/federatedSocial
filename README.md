@@ -493,11 +493,11 @@ Then schedule it. The easiest way is the interactive helper, which installs the 
 
 It prompts for the alert email (defaulting to `SMTP_FROM_NAME` from `.env`) and the hour to run (default 03:00), then writes a self-contained, idempotent block to your crontab — re-running it updates the block rather than duplicating it.
 
-Prefer to do it by hand? Edit the operator's crontab (`crontab -e`) and add a nightly run at 03:00, with `MAILTO` so failures reach you (the script exits non-zero on any failure):
+Prefer to do it by hand? Edit the operator's crontab (`crontab -e`) and add a nightly run at 03:00. Mind the alerting mechanics: **cron emails output, not exit codes** — if you redirect everything into the log, `MAILTO` will never fire. The `|| echo` below prints a single line only on failure, and that line is the only mail cron ever sends you:
 
 ```cron
 MAILTO=you@example.com
-0 3 * * * cd /path/to/federated-social && ./backup/pg-backup.sh >> log/pg-backup.log 2>&1
+0 3 * * * cd /path/to/federated-social && ./backup/pg-backup.sh >> log/pg-backup.log 2>&1 || echo "pg-backup FAILED — see log/pg-backup.log"
 ```
 
 Use an absolute path to the repo — cron runs with a minimal environment. The script sources the repo-root `.env` itself, so no extra env setup is needed in the crontab.

@@ -12,8 +12,9 @@
 #
 # Nothing is written to local disk — the dump streams straight to Garage.
 #
-# Exit codes: non-zero on any failure so cron emails the operator (set
-# MAILTO in the crontab).
+# Exits non-zero on any failure. Note cron mails OUTPUT, not exit codes —
+# the backup-cron helper's crontab line turns a failure into one stdout line
+# so MAILTO actually fires (all normal output goes to log/pg-backup.log).
 #
 # Requirements:
 #   - Run on the host where shared-db is running (uses docker exec).
