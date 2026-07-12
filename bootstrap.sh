@@ -903,14 +903,32 @@ cmd_up() {
       2>/dev/null | sed -n 's/^Digest: //p')"
     [[ -n "$mastodon_oidc_hash" ]] || die "Failed to derive Mastodon OIDC client secret hash (is docker + the authelia image available?)."
 
+    # PeerTube OIDC client_secret: same pattern. PeerTube has no env OIDC — the
+    # plugin reads the secret from its admin-UI settings — so PEERTUBE_OIDC_
+    # CLIENT_SECRET is the value the operator pastes into the plugin AND the
+    # source for this Authelia-side pbkdf2 hash.
+    local peertube_url="${PEERTUBE_DOMAIN:-peertube.example.com}"
+    if [[ "${PEERTUBE_OIDC_ENABLED:-false}" == "true" && -z "${PEERTUBE_OIDC_CLIENT_SECRET:-}" ]]; then
+      die "PEERTUBE_OIDC_ENABLED=true but PEERTUBE_OIDC_CLIENT_SECRET is empty.
+  Generate one: openssl rand -hex 32"
+    fi
+    local peertube_oidc_secret="${PEERTUBE_OIDC_CLIENT_SECRET:-$(openssl rand -hex 16)}"
+    local peertube_oidc_hash
+    peertube_oidc_hash="$(docker run --rm "authelia/authelia:${AUTHELIA_VERSION:-4.39.20}" \
+      authelia crypto hash generate pbkdf2 --variant sha512 --password "${peertube_oidc_secret}" \
+      2>/dev/null | sed -n 's/^Digest: //p')"
+    [[ -n "$peertube_oidc_hash" ]] || die "Failed to derive PeerTube OIDC client secret hash (is docker + the authelia image available?)."
+
     sed -e "s|__AUTHELIA_DOMAIN__|${authelia_domain}|g" \
         -e "s|__GOTOSOCIAL_URL__|${gts_url}|g" \
         -e "s|__GTS_OIDC_HASH__|${gts_oidc_hash}|g" \
         -e "s|__MASTODON_URL__|${mastodon_url}|g" \
         -e "s|__MASTODON_OIDC_HASH__|${mastodon_oidc_hash}|g" \
+        -e "s|__PEERTUBE_URL__|${peertube_url}|g" \
+        -e "s|__PEERTUBE_OIDC_HASH__|${peertube_oidc_hash}|g" \
       "${REPO_ROOT}/authelia/configuration.yml" \
       > "${REPO_ROOT}/authelia/configuration.runtime.yml"
-    echo "[bootstrap] Generated authelia/configuration.runtime.yml (domain=${authelia_domain}, gts=${gts_url}/oidc=${GOTOSOCIAL_OIDC_ENABLED:-false}, mastodon=${mastodon_url}/oidc=${MASTODON_OIDC_ENABLED:-false})."
+    echo "[bootstrap] Generated authelia/configuration.runtime.yml (domain=${authelia_domain}, gts=${gts_url}/oidc=${GOTOSOCIAL_OIDC_ENABLED:-false}, mastodon=${mastodon_url}/oidc=${MASTODON_OIDC_ENABLED:-false}, peertube=${peertube_url}/oidc=${PEERTUBE_OIDC_ENABLED:-false})."
 
     local pem="${REPO_ROOT}/authelia/private.pem"
     local users="${REPO_ROOT}/authelia/users.yml"

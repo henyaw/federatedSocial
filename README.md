@@ -10,7 +10,7 @@ Self-host federated social services — Pixelfed, Mastodon, Diaspora, Funkwhale,
 - **Tag-based access control**: who can talk to what is defined in a single JSON file in the Tailscale admin console, not in iptables or firewall configs.
 - **A single operator script** (`bootstrap.sh`) that brings stacks up and down, provisions databases and storage, and creates admin users — so you don't have to learn each app's CLI.
 - **Stalwart mail server** (SMTP, IMAP, JMAP) on the tailnet. All configuration lives in Postgres; mail blobs in Garage. One mail stack shared by all your instances, with Let's Encrypt certificates via ACME and a web admin UI.
-- **Authelia SSO/OIDC** — single sign-on for the apps that support it (verified for GoToSocial and Mastodon — see [What works today](#what-works-today)). One set of credentials, one login portal at `auth.yourdomain.com`. OIDC clients are registered in `authelia/configuration.yml`.
+- **Authelia SSO/OIDC** — single sign-on for the apps that support it (verified for GoToSocial, Mastodon, and PeerTube — see [What works today](#what-works-today)). One set of credentials, one login portal at `auth.yourdomain.com`. OIDC clients are registered in `authelia/configuration.yml`.
 - **Lemmy** federated link aggregator and community discussion board, with full ActivityPub federation.
 - **Clean teardown**: tearing a stack down removes its services from your Tailscale admin console automatically. No ghost devices to clean up.
 - **One `.env` file** controls the whole stack. Hostnames, passwords, domains, SMTP, storage keys — all in one place.
@@ -30,7 +30,7 @@ Not every app is at the same level of polish. This stack ships templates for mor
 | **Stalwart** | mail | ✅ | 🟡 ³ | 🟡 Token-only SSO |
 | **Diaspora** | microblog | ✗ ⁴ | 🚧 | 🟡 Local media only |
 | **Funkwhale** | audio | ✅ | ✗ ⁶ | 🟡 S3 only |
-| **PeerTube** | video | ✅ ⁷ | 🚧 ⁸ | 🟡 S3 verified, SSO not wired |
+| **PeerTube** | video | ✅ ⁷ | ✅ ⁸ | ✅ Full boat |
 
 ¹ Pixelfed has no first-class OIDC upstream — SSO would be a custom job.
 ² Lemmy's OAuth/OIDC lives only on its dev branch; no stable release has it (checked through 0.19.19). S3 via pict-rs object storage works.
@@ -40,7 +40,7 @@ Not every app is at the same level of polish. This stack ships templates for mor
 
 ⁷ PeerTube's S3 client has **no path-style option** (upstream [#4455](https://github.com/Chocobozzz/PeerTube/issues/4455)) — it uses virtual-host addressing (`<bucket>.endpoint`), which MagicDNS can't resolve, so the move-to-object-storage job fails with `ENOTFOUND`. Set `PEERTUBE_OBJECT_STORAGE_ENDPOINT` to Garage's Tailscale **IP** to force path-style. Verified end-to-end (move + HLS playback via the public `*-media` hosts). Under HLS-only transcoding (the 7.x default) the `streaming-playlists` bucket is the one populated; `web-videos` stays empty. The HLS player fetches segments cross-origin, so the PeerTube buckets also need a **CORS** rule (`provision-garage` sets it via `PutBucketCors`; missing CORS shows as a video that spins forever with no error) — plain image/video media on the other apps doesn't need this.
 
-⁸ PeerTube does support OIDC, but only via a post-install admin-UI plugin (`peertube-plugin-auth-openid-connect`) — not wired or verified in this stack. The Authelia client stub is present (commented) in `authelia/configuration.yml`.
+⁸ PeerTube OIDC is delegated to the `peertube-plugin-auth-openid-connect` plugin, installed + configured in the admin UI after first boot (it has no env-based OIDC). `bootstrap.sh` registers the matching Authelia client from the `PEERTUBE_OIDC_*` vars in `.env`. **Gotcha:** the plugin authenticates with `client_secret_post`, so the Authelia client sets `token_endpoint_auth_method: client_secret_post` (GoToSocial/Mastodon use the default `client_secret_basic`, hence don't need it). Verified end-to-end — login auto-provisions the PeerTube account.
 
 Infrastructure stacks (`shared-db`, `garage`, `authelia`) are the foundation the verified apps run on and are considered working.
 
@@ -412,7 +412,7 @@ Each app has its own OIDC configuration location:
 - **GoToSocial**: `GTS_OIDC_*` env vars in `.env`, then restart the stack
 - **Mastodon**: **Admin → Settings** in the Mastodon web UI (or `OIDC_ENABLED=true` in `.env`)
 - **Funkwhale**: `SOCIAL_AUTH_*` env vars
-- **PeerTube**: **Admin → Configuration → Login** in the PeerTube web UI
+- **PeerTube**: install the `peertube-plugin-auth-openid-connect` plugin, then **Admin → Plugins → auth-openid-connect → Settings** (Discover URL = the `.well-known` URL above, client id/secret from `PEERTUBE_OIDC_*`). The Authelia client must use `token_endpoint_auth_method: client_secret_post` — the bootstrap-rendered client already does.
 
 ---
 
