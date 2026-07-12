@@ -126,6 +126,8 @@ In the admin console, go to **Access Controls** and paste the contents of `acl.e
 
 This file defines which services can talk to which. The defaults allow app tiers to reach Postgres, Redis, and Garage, allow your host reverse proxy to reach the app web tiers, and allow you (as an admin) to reach everything for debugging.
 
+It's also worth reading even if you never edit it: because every grant names its source tag, destination tag, and port, **the ACL file documents every service port and inter-service relationship in the stack**. If you're ever unsure what talks to what (or on which port), `acl.example.hujson` is the single authoritative map.
+
 ### 4. Configure `.env`
 
 Copy the example and edit it:
@@ -577,7 +579,7 @@ If you renamed a service in `.env`, the old name's device is now an unused ephem
 ## Security notes
 
 - Internal services (Postgres, Redis, Garage) have no exposed ports on your server. They are only reachable through your tailnet. This is enforced by container network configuration, not firewall rules — meaning a host firewall misconfiguration cannot expose them.
-- Access between services is controlled by Tailscale ACL tags. If you add a new app, make sure to add the right tags to the ACL or it won't be able to reach the database or storage.
+- Access between services is controlled by Tailscale ACL tags. If you add a new app, make sure to add the right tags to the ACL or it won't be able to reach the database or storage. A side benefit: the ACL file doubles as the stack's connectivity documentation — every service port and inter-service relationship is spelled out in `acl.example.hujson`.
 - The `.env` file contains all your passwords and storage keys. Don't commit it to git. The included `.gitignore` excludes it by default; don't override that.
 - Your OAuth client secret is roughly as sensitive as your Tailscale account credentials for this stack. Rotate it if you suspect exposure.
 - Public-facing apps are still public-facing. The tailnet protects internal service-to-service communication, not the public web interface. Standard web security applies: keep apps updated, use strong admin passwords, enable 2FA where supported.
