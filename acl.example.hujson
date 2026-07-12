@@ -85,6 +85,9 @@
     // Lemmy — federated link aggregator
     "tag:lemmy-web":             ["autogroup:admin", "tag:lemmy-web"],
 
+    // Console — heart-of-gold operator dashboard / fleet observer
+    "tag:console-web":           ["autogroup:admin", "tag:console-web"],
+
     // Optional: tag your streaming/broadcast machines so they can publish
     // RTMP to PeerTube without going through a public ingest proxy.
     // "tag:streamer":          ["autogroup:admin", "tag:streamer"],
@@ -104,6 +107,7 @@
         "tag:stalwart",
         "tag:authelia",
         "tag:lemmy-web",
+        "tag:console-web",
       ],
       "dst": ["tag:db-postgres"],
       "ip":  ["tcp:5432"],
@@ -167,6 +171,20 @@
       "src": ["tag:reverse-proxy"],
       "dst": ["tag:mastodon-web", "tag:diaspora-web"],
       "ip":  ["tcp:3000"],
+    },
+    // Console — Caddy edge reaches the Nuxt app on its internal :3000.
+    {
+      "src": ["tag:reverse-proxy"],
+      "dst": ["tag:console-web"],
+      "ip":  ["tcp:3000"],
+    },
+    // Console is the FLEET OBSERVER — its dashboard probes every service
+    // (http / pg / redis / nodeinfo). Broad reach, like tag:nvimide; tighten to
+    // specific tags/ports later if desired.
+    {
+      "src": ["tag:console-web"],
+      "dst": ["*"],
+      "ip":  ["*"],
     },
     {
       "src": ["tag:reverse-proxy"],

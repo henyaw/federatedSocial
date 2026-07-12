@@ -903,11 +903,38 @@ cmd_up() {
       2>/dev/null | sed -n 's/^Digest: //p')"
     [[ -n "$mastodon_oidc_hash" ]] || die "Failed to derive Mastodon OIDC client secret hash (is docker + the authelia image available?)."
 
+    # --- PeerTube + heart-of-gold apps (console, babelfish) ---
+    # Same pattern as GTS/Mastodon: Authelia stores the pbkdf2 HASH; the app holds
+    # the plaintext (in its own .env, mirrored into this .env so we can hash it).
+    # PeerTube was previously hand-added to the runtime — templating it here fixes
+    # that fragility. An empty secret hashes a throwaway so the client stays a
+    # valid-but-unused registration until it's wired (matches the SSO-off path).
+    _oidc_hash() {
+      docker run --rm "authelia/authelia:${AUTHELIA_VERSION:-4.39.20}" \
+        authelia crypto hash generate pbkdf2 --variant sha512 --password "$1" \
+        2>/dev/null | sed -n 's/^Digest: //p'
+    }
+    local peertube_url="${PEERTUBE_DOMAIN:-peertube.example.com}"
+    local peertube_oidc_hash;  peertube_oidc_hash="$(_oidc_hash "${PEERTUBE_OIDC_CLIENT_SECRET:-$(openssl rand -hex 16)}")"
+    local console_url="${CONSOLE_URL:-console.example.com}"
+    local console_oidc_hash;   console_oidc_hash="$(_oidc_hash "${CONSOLE_OIDC_CLIENT_SECRET:-$(openssl rand -hex 16)}")"
+    local babelfish_url="${BABELFISH_URL:-babelfish.example.com}"
+    local babelfish_oidc_hash; babelfish_oidc_hash="$(_oidc_hash "${BABELFISH_OIDC_CLIENT_SECRET:-$(openssl rand -hex 16)}")"
+    for _h in "$peertube_oidc_hash" "$console_oidc_hash" "$babelfish_oidc_hash"; do
+      [[ -n "$_h" ]] || die "Failed to derive an OIDC client secret hash (docker + the authelia image available?)."
+    done
+
     sed -e "s|__AUTHELIA_DOMAIN__|${authelia_domain}|g" \
         -e "s|__GOTOSOCIAL_URL__|${gts_url}|g" \
         -e "s|__GTS_OIDC_HASH__|${gts_oidc_hash}|g" \
         -e "s|__MASTODON_URL__|${mastodon_url}|g" \
         -e "s|__MASTODON_OIDC_HASH__|${mastodon_oidc_hash}|g" \
+        -e "s|__PEERTUBE_URL__|${peertube_url}|g" \
+        -e "s|__PEERTUBE_OIDC_HASH__|${peertube_oidc_hash}|g" \
+        -e "s|__CONSOLE_URL__|${console_url}|g" \
+        -e "s|__CONSOLE_OIDC_HASH__|${console_oidc_hash}|g" \
+        -e "s|__BABELFISH_URL__|${babelfish_url}|g" \
+        -e "s|__BABELFISH_OIDC_HASH__|${babelfish_oidc_hash}|g" \
       "${REPO_ROOT}/authelia/configuration.yml" \
       > "${REPO_ROOT}/authelia/configuration.runtime.yml"
     echo "[bootstrap] Generated authelia/configuration.runtime.yml (domain=${authelia_domain}, gts=${gts_url}/oidc=${GOTOSOCIAL_OIDC_ENABLED:-false}, mastodon=${mastodon_url}/oidc=${MASTODON_OIDC_ENABLED:-false})."
@@ -1167,7 +1194,10 @@ cmd_backup_cron() {
   [[ "$hour" =~ ^([0-9]|1[0-9]|2[0-3])$ ]] || die "Invalid hour '${hour}' — must be 0-23."
 
   # --- Compose the managed crontab block -----------------------------------
-  local cmd_line="cd ${REPO_ROOT} && ./backup/pg-backup.sh >> log/pg-backup.log 2>&1"
+  # cron emails OUTPUT, not exit codes — with everything redirected into the
+  # log, a failure would never reach MAILTO. The || echo puts one line on
+  # stdout only when the script fails, so that's the only mail cron sends.
+  local cmd_line="cd ${REPO_ROOT} && ./backup/pg-backup.sh >> log/pg-backup.log 2>&1 || echo \"pg-backup FAILED on \$(hostname) — see ${REPO_ROOT}/log/pg-backup.log\""
   local cron_line="0 ${hour} * * * ${cmd_line}"
   local begin="# >>> federatedSocial pg-backup (managed by bootstrap.sh) >>>"
   local end="# <<< federatedSocial pg-backup (managed by bootstrap.sh) <<<"

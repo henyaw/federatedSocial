@@ -10,7 +10,7 @@ Self-host federated social services — Pixelfed, Mastodon, Diaspora, Funkwhale,
 - **Tag-based access control**: who can talk to what is defined in a single JSON file in the Tailscale admin console, not in iptables or firewall configs.
 - **A single operator script** (`bootstrap.sh`) that brings stacks up and down, provisions databases and storage, and creates admin users — so you don't have to learn each app's CLI.
 - **Stalwart mail server** (SMTP, IMAP, JMAP) on the tailnet. All configuration lives in Postgres; mail blobs in Garage. One mail stack shared by all your instances, with Let's Encrypt certificates via ACME and a web admin UI.
-- **Authelia SSO/OIDC** — single sign-on for the apps that support it (verified for GoToSocial and Mastodon — see [What works today](#what-works-today)). One set of credentials, one login portal at `auth.yourdomain.com`. OIDC clients are registered in `authelia/configuration.yml`.
+- **Authelia SSO/OIDC** — single sign-on for the apps that support it (verified for GoToSocial, Mastodon, and PeerTube — see [What works today](#what-works-today)). One set of credentials, one login portal at `auth.yourdomain.com`. OIDC clients are registered in `authelia/configuration.yml`.
 - **Lemmy** federated link aggregator and community discussion board, with full ActivityPub federation.
 - **Clean teardown**: tearing a stack down removes its services from your Tailscale admin console automatically. No ghost devices to clean up.
 - **One `.env` file** controls the whole stack. Hostnames, passwords, domains, SMTP, storage keys — all in one place.
@@ -30,7 +30,7 @@ Not every app is at the same level of polish. This stack ships templates for mor
 | **Stalwart** | mail | ✅ | 🟡 ³ | 🟡 Token-only SSO |
 | **Diaspora** | microblog | ✗ ⁴ | 🚧 | 🟡 Local media only |
 | **Funkwhale** | audio | ✅ | ✗ ⁶ | 🟡 S3 only |
-| **PeerTube** | video | ✅ ⁷ | 🚧 ⁸ | 🟡 S3 verified, SSO not wired |
+| **PeerTube** | video | ✅ ⁷ | ✅ ⁸ | ✅ Full boat |
 
 ¹ Pixelfed has no first-class OIDC upstream — SSO would be a custom job.
 ² Lemmy's OAuth/OIDC lives only on its dev branch; no stable release has it (checked through 0.19.19). S3 via pict-rs object storage works.
@@ -40,7 +40,7 @@ Not every app is at the same level of polish. This stack ships templates for mor
 
 ⁷ PeerTube's S3 client has **no path-style option** (upstream [#4455](https://github.com/Chocobozzz/PeerTube/issues/4455)) — it uses virtual-host addressing (`<bucket>.endpoint`), which MagicDNS can't resolve, so the move-to-object-storage job fails with `ENOTFOUND`. Set `PEERTUBE_OBJECT_STORAGE_ENDPOINT` to Garage's Tailscale **IP** to force path-style. Verified end-to-end (move + HLS playback via the public `*-media` hosts). Under HLS-only transcoding (the 7.x default) the `streaming-playlists` bucket is the one populated; `web-videos` stays empty. The HLS player fetches segments cross-origin, so the PeerTube buckets also need a **CORS** rule (`provision-garage` sets it via `PutBucketCors`; missing CORS shows as a video that spins forever with no error) — plain image/video media on the other apps doesn't need this.
 
-⁸ PeerTube does support OIDC, but only via a post-install admin-UI plugin (`peertube-plugin-auth-openid-connect`) — not wired or verified in this stack. The Authelia client stub is present (commented) in `authelia/configuration.yml`.
+⁸ PeerTube OIDC is delegated to the `peertube-plugin-auth-openid-connect` plugin, installed + configured in the admin UI after first boot (it has no env-based OIDC). `bootstrap.sh` registers the matching Authelia client from the `PEERTUBE_OIDC_*` vars in `.env`. **Gotcha:** the plugin authenticates with `client_secret_post`, so the Authelia client sets `token_endpoint_auth_method: client_secret_post` (GoToSocial/Mastodon use the default `client_secret_basic`, hence don't need it). Verified end-to-end — login auto-provisions the PeerTube account.
 
 Infrastructure stacks (`shared-db`, `garage`, `authelia`) are the foundation the verified apps run on and are considered working.
 
@@ -70,7 +70,9 @@ Your reverse proxy on the host receives public HTTPS traffic and forwards it to 
 ./bootstrap.sh ps   [stack]               Show container status
 ./bootstrap.sh provision-db <app>         Idempotent DB role + database setup
 ./bootstrap.sh provision-garage           Idempotent Garage layout + buckets + key
+./bootstrap.sh provision-stalwart         Configure Stalwart via JMAP (auto-run by 'up stalwart')
 ./bootstrap.sh user-create <app> <user> <email>   Create an admin user
+./bootstrap.sh backup-cron                Install the nightly pg-backup cron (interactive)
 ```
 
 Stacks: `shared-db`, `garage`, `stalwart`, `authelia`, `pixelfed`, `mastodon`, `diaspora`, `funkwhale`, `gotosocial`, `peertube`, `lemmy`.
@@ -205,7 +207,7 @@ This file is gitignored. Keep it safe — losing it invalidates all active sessi
 ./bootstrap.sh up authelia
 ```
 
-`bootstrap.sh` generates `authelia/configuration.runtime.yml` from your `.env`, verifies `private.pem` exists, and creates an empty `authelia/users.yml` placeholder if none is present. See [Authelia: first-boot configuration](#authelia-first-boot-configuration) to add users and register OIDC clients.
+`bootstrap.sh` generates `authelia/configuration.runtime.yml` from your `.env` — including the pbkdf2 client-secret hashes for every templated OIDC client (GoToSocial, Mastodon, PeerTube; an unset `*_OIDC_CLIENT_SECRET` renders a throwaway hash so the client stays a valid-but-unused registration) — verifies `private.pem` exists, and creates an empty `authelia/users.yml` placeholder if none is present. See [Authelia: first-boot configuration](#authelia-first-boot-configuration) to add users and register OIDC clients.
 
 ### 9. Bring up each app stack
 
@@ -402,7 +404,7 @@ Edit `authelia/configuration.yml` and uncomment the client blocks for the apps y
 - `client_secret` — generate with `openssl rand -hex 32`, then hash with `authelia crypto hash generate`
 - `redirect_uris` — the exact callback URL the app expects (documented in each app's OIDC setup guide)
 
-Run `./bootstrap.sh up authelia` after editing — it regenerates `configuration.runtime.yml` and restarts the container.
+Run `./bootstrap.sh up authelia` after editing — it regenerates `configuration.runtime.yml`. If the container was already running, follow up with `docker compose restart authelia` (from `authelia/`): Authelia only reads the mounted config at startup, and `up` on a running stack won't recreate the container.
 
 ### Point apps at Authelia
 
@@ -412,7 +414,7 @@ Each app has its own OIDC configuration location:
 - **GoToSocial**: `GTS_OIDC_*` env vars in `.env`, then restart the stack
 - **Mastodon**: **Admin → Settings** in the Mastodon web UI (or `OIDC_ENABLED=true` in `.env`)
 - **Funkwhale**: `SOCIAL_AUTH_*` env vars
-- **PeerTube**: **Admin → Configuration → Login** in the PeerTube web UI
+- **PeerTube**: install the `peertube-plugin-auth-openid-connect` plugin, then **Admin → Plugins → auth-openid-connect → Settings** (Discover URL = the `.well-known` URL above, client id/secret from `PEERTUBE_OIDC_*`). The Authelia client must use `token_endpoint_auth_method: client_secret_post` — the bootstrap-rendered client already does.
 
 ---
 
@@ -461,7 +463,7 @@ Garage gives you a place to put backups that isn't the same disk as your data. T
 - **`.env`**: the only thing that must live outside Garage. Keep a copy in a password manager or encrypted off-site store — it holds every secret, and recovery starts here. `bootstrap.sh` keeps the on-disk copy at `chmod 600`; leave it in place — Compose interpolates `${VAR}` from it on every `up`, so the stack can't start (or recreate a container after a reboot) without it.
 - **Tailscale ACL JSON**: export it from the admin console.
 
-> **Untested:** `backup/pg-backup.sh` and `backup/pg-restore.sh` are templated but have not yet been exercised against a live stack. Do a manual run and confirm the object lands in the bucket (and a restore into a throwaway cluster) before relying on the cron.
+> **Validated (2026-07-11):** the nightly cron has run against a live stack for two weeks, and a production dump pulled back from Garage restored cleanly into a throwaway `postgres:16-alpine` cluster — every database and role replayed, app roles authenticate with their `.env` passwords, and the only `psql` error was the expected `role "postgres" already exists`. Still do the manual first run below on a new deployment. Known failure mode: if the Garage endpoint is unreachable at run time the script exits non-zero without pruning anything — set `MAILTO` so those nights reach you, and check `log/pg-backup.log` if an expected object is missing.
 
 #### What the backup script does
 
@@ -491,11 +493,11 @@ Then schedule it. The easiest way is the interactive helper, which installs the 
 
 It prompts for the alert email (defaulting to `SMTP_FROM_NAME` from `.env`) and the hour to run (default 03:00), then writes a self-contained, idempotent block to your crontab — re-running it updates the block rather than duplicating it.
 
-Prefer to do it by hand? Edit the operator's crontab (`crontab -e`) and add a nightly run at 03:00, with `MAILTO` so failures reach you (the script exits non-zero on any failure):
+Prefer to do it by hand? Edit the operator's crontab (`crontab -e`) and add a nightly run at 03:00. Mind the alerting mechanics: **cron emails output, not exit codes** — if you redirect everything into the log, `MAILTO` will never fire. The `|| echo` below prints a single line only on failure, and that line is the only mail cron ever sends you:
 
 ```cron
 MAILTO=you@example.com
-0 3 * * * cd /path/to/federated-social && ./backup/pg-backup.sh >> log/pg-backup.log 2>&1
+0 3 * * * cd /path/to/federated-social && ./backup/pg-backup.sh >> log/pg-backup.log 2>&1 || echo "pg-backup FAILED — see log/pg-backup.log"
 ```
 
 Use an absolute path to the repo — cron runs with a minimal environment. The script sources the repo-root `.env` itself, so no extra env setup is needed in the crontab.

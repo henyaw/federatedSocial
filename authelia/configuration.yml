@@ -109,6 +109,15 @@ identity_providers:
         id_token: [email, email_verified, name, preferred_username, groups]
       mastodon:
         id_token: [email, email_verified, name, preferred_username, groups]
+      peertube:
+        id_token: [email, email_verified, name, preferred_username, groups]
+      # hog:   # heart-of-gold Nuxt apps (console, babelfish). Only needed if the
+      #        # app reads groups/email from the id_token rather than the userinfo
+      #        # endpoint (nuxt-auth-utils usually uses userinfo, where Authelia
+      #        # exposes these by default — try WITHOUT this first). Uncomment the
+      #        # policy AND the `claims_policy: hog` line in the clients below if
+      #        # the `admins` group doesn't come through.
+      #   id_token: [email, email_verified, name, preferred_username, groups]
 
     # ---- OIDC clients ----
     # Register one client per app that integrates with Authelia.
@@ -166,15 +175,62 @@ identity_providers:
     # the Funkwhale stack is S3-only. Revisit if upstream adds OIDC RP support.
 
     # --- PeerTube ---
-    # PeerTube supports OIDC via its built-in plugin system.
-    # Install peertube-plugin-auth-openid-connect and configure the plugin
-    # in the PeerTube admin UI with the client ID/secret from below.
-    # - client_id: peertube
-    #   client_name: PeerTube
-    #   client_secret: "$pbkdf2-sha512$..."
-    #   public: false
-    #   authorization_policy: one_factor
-    #   redirect_uris:
-    #     - https://peertube.example.com/plugins/auth-openid-connect/router/code-cb
-    #   scopes: [openid, profile, email]
-    #   response_types: [code]
+    # OIDC via the peertube-plugin-auth-openid-connect plugin (configured in the
+    # PeerTube admin UI with PEERTUBE_OIDC_CLIENT_ID/SECRET from .env). Rendered by
+    # bootstrap.sh into configuration.runtime.yml (gitignored):
+    #   __PEERTUBE_OIDC_HASH__ <- pbkdf2 hash of PEERTUBE_OIDC_CLIENT_SECRET
+    #   __PEERTUBE_URL__       <- PEERTUBE_DOMAIN from .env
+    # The plugin sends client creds in the POST body, so token_endpoint_auth_method
+    # MUST be client_secret_post (Authelia defaults confidential clients to basic,
+    # which fails the token exchange with "…does not allow this method").
+      - client_id: peertube
+        client_name: PeerTube
+        client_secret: "__PEERTUBE_OIDC_HASH__"
+        public: false
+        authorization_policy: one_factor
+        claims_policy: peertube
+        token_endpoint_auth_method: client_secret_post
+        redirect_uris:
+          - https://__PEERTUBE_URL__/plugins/auth-openid-connect/router/code-cb
+        scopes: [openid, profile, email]
+        response_types: [code]
+
+    # --- Console (heart-of-gold operator dashboard) ---
+    # Internal fleet dashboard; the app gates the whole thing on the `admins`
+    # group (NUXT_AUTH_REQUIRED_GROUP=admins). nuxt-auth-utils (packages/auth) does
+    # Authorization Code + PKCE and calls back at /auth/authelia. Rendered by
+    # bootstrap.sh:
+    #   __CONSOLE_OIDC_HASH__ <- pbkdf2 hash of CONSOLE_OIDC_CLIENT_SECRET
+    #                            (mirror of apps/console/.env — keep in sync)
+    #   __CONSOLE_URL__       <- CONSOLE_URL from .env
+    # No access_control rule needed — like gotosocial/mastodon this is an OIDC
+    # client; the app itself enforces the `admins` group. (If that group doesn't
+    # arrive via userinfo, uncomment the `hog` claims-policy above and add
+    # `claims_policy: hog` here.)
+      - client_id: console
+        client_name: Console
+        client_secret: "__CONSOLE_OIDC_HASH__"
+        public: false
+        authorization_policy: one_factor
+        redirect_uris:
+          - https://__CONSOLE_URL__/auth/authelia
+        scopes: [openid, profile, email, groups]
+        response_types: [code]
+
+    # --- Babelfish (heart-of-gold public CMS) ---
+    # Same handler (/auth/authelia). /admin requires a logged-in session; per-blog
+    # ownership is enforced in-app, not by an Authelia group. Rendered by bootstrap:
+    #   __BABELFISH_OIDC_HASH__ <- pbkdf2 hash of BABELFISH_OIDC_CLIENT_SECRET
+    #                              (mirror of apps/babelfish/.env — keep in sync)
+    #   __BABELFISH_URL__       <- BABELFISH_URL from .env
+    # NOT wired yet: until BABELFISH_OIDC_CLIENT_SECRET is set in BOTH .env files,
+    # bootstrap hashes a throwaway → this stays a valid-but-unused client.
+      - client_id: babelfish
+        client_name: Babelfish
+        client_secret: "__BABELFISH_OIDC_HASH__"
+        public: false
+        authorization_policy: one_factor
+        redirect_uris:
+          - https://__BABELFISH_URL__/auth/authelia
+        scopes: [openid, profile, email, groups]
+        response_types: [code]

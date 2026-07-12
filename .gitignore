@@ -1,5 +1,9 @@
-# Operator's real configuration — never commit
+# Operator's real configuration — never commit. .env.new is the wizard's
+# staged copy and carries the same real credentials; .wizard-state tracks
+# the operator's progress through it.
 .env
+.env.new
+.wizard-state
 
 # Per-subdir .env symlinks (bootstrap.sh creates these automatically on 'up').
 # Gitignored so they are never accidentally committed.
@@ -25,7 +29,9 @@ stalwart/config/config.runtime.json
 
 # Generated at runtime by bootstrap.sh — rebuilt on every 'up authelia'.
 # Edit authelia/configuration.yml (the tracked template), not this file.
+# Backups of it carry the operator's real domains — never commit those either.
 authelia/configuration.runtime.yml
+authelia/configuration.runtime.yml.bak-*
 
 # Generated at runtime by bootstrap.sh — rebuilt on every 'up lemmy'.
 # Edit lemmy/lemmy.hjson (the tracked template), not this file.
