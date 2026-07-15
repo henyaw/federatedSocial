@@ -172,11 +172,14 @@
       "dst": ["tag:mastodon-web", "tag:diaspora-web"],
       "ip":  ["tcp:3000"],
     },
-    // Console — Caddy edge reaches the Nuxt app on its internal :3000.
+    // Console is TAILNET-ONLY (no WAN, no reverse-proxy route). The sidecar
+    // fronts the app itself via `tailscale serve` on :443 with a real cert
+    // (see apps/console/ts-serve.json). Operators' own devices reach it here —
+    // tailscale serve traffic still honors the ACL, so this grant is required.
     {
-      "src": ["tag:reverse-proxy"],
+      "src": ["autogroup:admin"],
       "dst": ["tag:console-web"],
-      "ip":  ["tcp:3000"],
+      "ip":  ["tcp:443"],
     },
     // Console is the FLEET OBSERVER — its dashboard probes every service
     // (http / pg / redis / nodeinfo). Broad reach, like tag:nvimide; tighten to

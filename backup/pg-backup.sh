@@ -39,7 +39,12 @@ PG_BACKUP_BUCKET="${PG_BACKUP_BUCKET:-pg-backups}"
 PG_BACKUP_RETENTION_DAYS="${PG_BACKUP_RETENTION_DAYS:-14}"
 PG_BACKUP_PREFIX="${PG_BACKUP_PREFIX:-pg-}"
 GARAGE_REGION="${GARAGE_REGION:-garage}"
-AWSCLI_IMAGE="${AWSCLI_IMAGE:-amazon/aws-cli:latest}"
+# Pinned deliberately: :latest silently broke this backup for two days when
+# aws-cli 2.23 flipped on default checksums (see aws_garage below). This is the
+# fleet's last-line DB safety net, so reproducibility beats auto-patching; the
+# container only signs requests to Garage over the tailnet, so CVE latency is a
+# non-issue. Bump intentionally, verify, then move the pin. Override via .env.
+AWSCLI_IMAGE="${AWSCLI_IMAGE:-amazon/aws-cli:2.35.8}"
 
 GARAGE_ENDPOINT="http://${GARAGE_MAGIC_NAME}.${TS_TAILNET}:3900"
 
@@ -51,11 +56,19 @@ log() { echo "[pg-backup] $*"; }
 
 # aws-cli pointed at Garage, networked through the host so MagicDNS resolves.
 # Reads stdin when called in a pipe (the cp - case below passes -i).
+#
+# AWS_{REQUEST,RESPONSE}_CHECKSUM_* = when_required: aws-cli v2.23+ (Jan 2025)
+# turned on default CRC32 data-integrity checksums, which Garage rejects on
+# CreateMultipartUpload with "Bad request: invalid checksum algorithm". Since
+# AWSCLI_IMAGE tracks :latest, that break arrives silently on any pull. Scoping
+# checksums to when_required restores S3-compat without pinning the image.
 aws_garage() {
   docker run --rm -i --network host \
     -e AWS_ACCESS_KEY_ID="${GARAGE_ACCESS_KEY_ID}" \
     -e AWS_SECRET_ACCESS_KEY="${GARAGE_SECRET_ACCESS_KEY}" \
     -e AWS_DEFAULT_REGION="${GARAGE_REGION}" \
+    -e AWS_REQUEST_CHECKSUM_CALCULATION=when_required \
+    -e AWS_RESPONSE_CHECKSUM_VALIDATION=when_required \
     "${AWSCLI_IMAGE}" \
     --endpoint-url "${GARAGE_ENDPOINT}" "$@"
 }
