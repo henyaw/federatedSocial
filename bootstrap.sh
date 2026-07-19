@@ -359,7 +359,8 @@ cmd_provision_garage() {
     echo "  GARAGE_ACCESS_KEY_ID=${key_id}"
     echo "  GARAGE_SECRET_ACCESS_KEY=${secret_key}"
     echo ""
-    echo "[bootstrap] Then opt in apps via .env and restart their stacks:"
+    echo "[bootstrap] Then opt in apps via .env and restart their stacks"
+    echo "[bootstrap] (./bootstrap.sh restart <app> — never 'docker compose restart'):"
     echo "  MASTODON_S3_ENABLED=true"
     echo "  PIXELFED_ENABLE_CLOUD=true"
     echo "  PEERTUBE_OBJECT_STORAGE_ENABLED=true"
@@ -718,7 +719,7 @@ OIDCEOF
   echo "[bootstrap]      http://${STALWART_MAGIC_NAME}.${TS_TAILNET}:8080"
   echo "[bootstrap]      Settings → TLS → ACME Providers → Add"
   echo "[bootstrap]   3. Restart Stalwart to activate newly-created listeners:"
-  echo "[bootstrap]      docker compose -f stalwart/docker-compose.yml restart stalwart"
+  echo "[bootstrap]      ./bootstrap.sh restart stalwart"
 }
 
 _cmd_up_caddy() {
@@ -987,6 +988,26 @@ cmd_down() {
   dc "$stack" down
 }
 
+# Restart a stack the SAFE way. Do NOT use `docker compose restart` on these
+# stacks: every data service runs with `network_mode: "service:ts-<role>"` and
+# borrows its Tailscale sidecar's network namespace. `docker compose restart`
+# ignores `depends_on` ordering, so restarting the whole stack (or the sidecar)
+# races the data container against the sidecar recreating its netns — the data
+# container fails to join the namespace, exits 128, and `restart: unless-stopped`
+# does NOT revive a *start* failure. Result: a dead DB behind a healthy-looking
+# sidecar. down + up cycles in dependency order (sidecar healthy → then the data
+# container) and reuses all the runtime-config generation / provisioning in
+# cmd_up. (Bouncing a single app service — `docker compose restart <appservice>`,
+# sidecar untouched — is fine; this subcommand just removes the footgun.)
+cmd_restart() {
+  local stack="${1:-}"
+  [[ -n "$stack" ]] || die "Usage: ./bootstrap.sh restart <stack>"
+  require_stack "$stack"
+  echo "[bootstrap] Restarting ${stack} (down + ordered up — never 'compose restart')..."
+  cmd_down "$stack"
+  cmd_up "$stack"
+}
+
 cmd_logs() {
   local stack="${1:-}"
   [[ -n "$stack" ]] || die "Usage: ./bootstrap.sh logs <stack> [service]"
@@ -1240,6 +1261,7 @@ Usage: ./bootstrap.sh <command> [args]
 
   up                  <stack>               Bring up a stack
   down                <stack>               Tear down a stack
+  restart             <stack>               Safely restart a stack (down + ordered up)
   logs                <stack> [service]     Tail logs (Ctrl-C to stop)
   ps                  [stack]               Show container status for one or all stacks
   provision-db        <app>                 Idempotent DB role + database setup
@@ -1275,6 +1297,7 @@ shift || true
 case "$command" in
   up)           cmd_up "$@" ;;
   down)         cmd_down "$@" ;;
+  restart)      cmd_restart "$@" ;;
   logs)         cmd_logs "$@" ;;
   ps)           cmd_ps "$@" ;;
   provision-db)          cmd_provision_db "$@" ;;

@@ -440,6 +440,14 @@ Compose recreates only the containers whose images changed.
 
 The Tailscale devices automatically disappear from your admin console. Bringing it back up registers fresh devices with the same hostnames.
 
+### Restarting a stack
+
+```bash
+./bootstrap.sh restart shared-db
+```
+
+**Do not run `docker compose restart` on a whole stack (or on a sidecar).** Every data service runs with `network_mode: "service:ts-<role>"` and borrows its Tailscale sidecar's network namespace. `docker compose restart` ignores `depends_on` ordering, so it races the data container against the sidecar recreating that namespace — the data container fails to join it, exits **128**, and because that's a *start* failure, `restart: unless-stopped` never revives it. You're left with a dead database behind a still-healthy-looking sidecar (an outage that hides from a casual `docker ps`). `bootstrap.sh restart` does `down` then an ordered `up` (sidecar healthy → then the data container), reusing all the normal provisioning. Bouncing a single app service — `docker compose restart <appservice>`, sidecar left running — is fine; it's only the whole-stack/sidecar restart that bites.
+
 ### Adding a new app
 
 Each app lives in its own directory. To add one not already included:
@@ -525,6 +533,16 @@ List available backups and restore one (defaults to the most recent if you don't
 **App container keeps restarting with "database connection refused"**
 
 Almost always means the database sidecar isn't healthy yet. Check `docker compose ps` in the `shared-db/` directory — both sidecars should show `(healthy)`. If they don't, check their logs. If they do, check that the app's `.env` values for `DB_HOST` match what the database stack is advertising.
+
+**Postgres shows `Exited (128)` while its sidecar is still `Up (healthy)`**
+
+You ran `docker compose restart` on the whole `shared-db` stack (or on the `ts-postgres` sidecar). The Postgres container shares the sidecar's network namespace and lost the race to re-join it when the sidecar was recreated — it failed to start (exit 128), and `restart: unless-stopped` doesn't retry a start failure, so it stays dead behind a healthy-looking sidecar. Symptoms downstream: every app on the shared DB errors, and `pg-backup` logs `postgres container not found`. Recover with an ordered bring-up:
+
+```bash
+./bootstrap.sh up shared-db      # or: ./bootstrap.sh restart shared-db
+```
+
+Then use `./bootstrap.sh restart <stack>` in future, never `docker compose restart` on a whole stack — see "Restarting a stack" above.
 
 **Adding an app after shared-db has already run once — its DB user doesn't exist**
 
