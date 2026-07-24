@@ -212,6 +212,10 @@ identity_providers:
         client_secret: "__CONSOLE_OIDC_HASH__"
         public: false
         authorization_policy: one_factor
+        # nuxt-auth-utils sends the client secret in the token-request BODY, so
+        # this MUST be client_secret_post. Authelia defaults confidential clients
+        # to basic, which fails the exchange with "…does not allow this method".
+        token_endpoint_auth_method: client_secret_post
         redirect_uris:
           - https://__CONSOLE_URL__/auth/authelia
         scopes: [openid, profile, email, groups]
@@ -230,6 +234,8 @@ identity_providers:
         client_secret: "__BABELFISH_OIDC_HASH__"
         public: false
         authorization_policy: one_factor
+        # Same nuxt-auth-utils handler as console — creds go in the POST body.
+        token_endpoint_auth_method: client_secret_post
         redirect_uris:
           - https://__BABELFISH_URL__/auth/authelia
         scopes: [openid, profile, email, groups]
