@@ -43,6 +43,9 @@ services:
     cap_add:
       - NET_ADMIN
       - NET_RAW
+    # containerboot (PID 1) never reaps: orphans from the healthcheck or a
+    # `docker exec` would zombie forever. tini reaps; SIGTERM still forwards.
+    init: true
     healthcheck:
       # Gate on postgres AND garage — Stalwart's admin web SPA is stored in
       # S3 (Garage). If Garage isn't reachable on first boot, the UI blob
