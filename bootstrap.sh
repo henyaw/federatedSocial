@@ -14,6 +14,7 @@
 #   ./bootstrap.sh provision-db <app>            idempotent DB + role setup
 #   ./bootstrap.sh provision-garage              idempotent Garage bucket + key setup
 #   ./bootstrap.sh provision-stalwart            configure Stalwart via JMAP (auto-run by 'up stalwart')
+#   ./bootstrap.sh provision-pixelfed            create Pixelfed's OAuth personal access client (auto-run by 'up pixelfed')
 #   ./bootstrap.sh user-create <app> <username> <email>
 #
 # <stack>/<app>: shared-db | garage | pixelfed | mastodon | diaspora | funkwhale | gotosocial | peertube | stalwart | authelia | lemmy
@@ -748,6 +749,66 @@ OIDCEOF
   echo "[bootstrap]      ./bootstrap.sh restart stalwart"
 }
 
+# Create Pixelfed's Passport "personal access client" if it's missing.
+#
+# Why this exists: the pixelfed-glitch image's entrypoint.d/11-first-time-setup.sh
+# runs `passport:keys` when OAUTH_ENABLED is true, but gates
+# `passport:client --personal` behind PF_LOGIN_WITH_MASTODON_ENABLED — a
+# completely unrelated feature flag. With OAuth on and that flag off (our
+# default), the keys exist but no personal access client row does, and
+# /settings/applications → "Create New Token" returns HTTP 500
+# ("Personal access client not found. Please create one.") with no UI error.
+#
+# We do NOT set PF_LOGIN_WITH_MASTODON_ENABLED=true to work around it — that
+# would switch on Mastodon-federated login as a side effect of wanting API
+# tokens.
+#
+# Idempotent, and re-checked on every `up`: the image's only-once markers live
+# in the pixelfed-storage volume while the client row lives in Postgres, so a
+# reprovisioned database with a surviving storage volume would otherwise never
+# re-run this. Asking Passport the same question the failing code path asks
+# also means an operator who pins PASSPORT_PERSONAL_ACCESS_CLIENT_ID is left
+# alone rather than handed a duplicate client.
+cmd_provision_pixelfed() {
+  local cid
+  cid=$(dc pixelfed ps -q web 2>/dev/null | head -1)
+  [[ -n "$cid" ]] || die "Pixelfed is not running. Start it first: ./bootstrap.sh up pixelfed"
+
+  # Wait for artisan to be able to reach Postgres (the web container is up
+  # before its sidecar's tailnet path to the DB is necessarily usable).
+  local elapsed=0 interval=5 timeout=120 state=""
+  while true; do
+    state=$(docker exec -u www-data "$cid" php artisan tinker --execute \
+      'try { app(Laravel\Passport\ClientRepository::class)->personalAccessClient(); echo "PAC_OK"; }
+       catch (\RuntimeException $e) { echo "PAC_MISSING"; }' 2>/dev/null | tr -d '[:space:]')
+    case "$state" in
+      *PAC_OK*|*PAC_MISSING*) break ;;
+    esac
+    elapsed=$(( elapsed + interval ))
+    if [[ $elapsed -ge $timeout ]]; then
+      echo "[bootstrap] Warning: could not query Pixelfed's OAuth state after ${timeout}s."
+      echo "[bootstrap] Skipping personal-access-client check. Re-run once it settles:"
+      echo "[bootstrap]   ./bootstrap.sh provision-pixelfed"
+      return 0
+    fi
+    sleep "$interval"
+  done
+
+  if [[ "$state" == *PAC_OK* ]]; then
+    echo "[bootstrap] Pixelfed personal access client present."
+    return 0
+  fi
+
+  echo "[bootstrap] Creating Pixelfed personal access client (required by /settings/applications)..."
+  # The secret it prints is the CLIENT secret, not a user token — Pixelfed
+  # reads it from the DB itself, so there is nothing for the operator to save.
+  docker exec -u www-data "$cid" php artisan passport:client --personal \
+    --name "${PIXELFED_APP_NAME:-Pixelfed} Personal Access Client" \
+    --no-interaction >/dev/null ||
+    die "passport:client --personal failed. Inspect: ./bootstrap.sh logs pixelfed web"
+  echo "[bootstrap] Done — API tokens can now be created at https://${PIXELFED_DOMAIN:-your-domain}/settings/applications"
+}
+
 _cmd_up_caddy() {
   local caddy_bin="${CADDY_BIN:-/usr/local/bin/caddy}"
   local caddyfile="${REPO_ROOT}/caddy/Caddyfile"
@@ -993,6 +1054,12 @@ cmd_up() {
   #   ./bootstrap.sh provision-stalwart
   if [[ "$stack" == "stalwart" ]]; then
     cmd_provision_stalwart
+  fi
+
+  # Pixelfed's OAuth personal access client — idempotent, see the function
+  # comment for why the image doesn't create it for us.
+  if [[ "$stack" == "pixelfed" ]]; then
+    cmd_provision_pixelfed
   fi
 
   # Lemmy has no admin CLI — the FIRST visitor to the site claims the admin
@@ -1293,6 +1360,7 @@ Usage: ./bootstrap.sh <command> [args]
   provision-db        <app>                 Idempotent DB role + database setup
   provision-garage                          Idempotent Garage layout + bucket + key setup
   provision-stalwart                        Configure Stalwart via JMAP (auto-run by 'up stalwart')
+  provision-pixelfed                        Pixelfed OAuth personal access client (auto-run by 'up pixelfed')
   user-create         <app> <user> <email>  Create an admin user
   backup-cron                               Install the nightly pg-backup cron (interactive)
 
@@ -1329,6 +1397,7 @@ case "$command" in
   provision-db)          cmd_provision_db "$@" ;;
   provision-garage)      cmd_provision_garage ;;
   provision-stalwart)    cmd_provision_stalwart ;;
+  provision-pixelfed)    cmd_provision_pixelfed ;;
   user-create)           cmd_user_create "$@" ;;
   backup-cron)           cmd_backup_cron ;;
   help|--help|-h) usage ;;
